@@ -493,8 +493,7 @@ const setTimer = async (time, target, setNotify) => {
 
 }
 const cancelTimer = (notify) => {
-
-  Notify.cancel(notify);
+  if (notify) Notify.cancel(notify);
 }
 
 

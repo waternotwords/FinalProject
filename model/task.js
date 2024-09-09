@@ -621,7 +621,7 @@ export class Task {
 
     const m = this._minutes;
     const thisI = m.required.length - 2;
-    const dow = (new Date(dateVal)).getDay();
+    const dow = TimeDate.getDay();
     for(let i = 0; i < dCount; i++){
       this.updateStreak(m, m.complete[thisI], m.required[thisI]);
       m.required.shift()
