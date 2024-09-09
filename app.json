@@ -1,27 +1,51 @@
 {
   "expo": {
-    "name": "FinalProject",
-    "slug": "FinalProject",
+    "name": "TimeOnTarget",
+    "slug": "TimeOnTarget",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "scheme": "timeontarget",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.waternotwords.TimeOnTarget",
+      "requireFullScreen": true
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "package": "com.anonymous.TimeOnTarget"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-notifications",
+        {
+          "sounds": [
+            "./assets/notify.wav",
+            "./assets/alarm.wav"
+          ]
+        }
+      ]
+    ],
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "bc75a88b-f8c9-420c-98e8-bf61fe78cffd"
+      }
     }
   }
 }
