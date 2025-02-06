@@ -1,7 +1,6 @@
 
 import { Storage } from './storage';
 import { TimeDate } from './time';
-import { pursuitAward } from './awards';
 
 const M = Storage();
 
@@ -11,8 +10,6 @@ export class Pursuit {
   static PURSUITS = [];
   static ACTIVE = null;
   static ID_COUNTER = null;
-  // this.rM's TODAY's index
-  static RTI = 1;
   
   static GET_NEXT_ID(){
     const d = TimeDate.nowVal();
@@ -25,7 +22,7 @@ export class Pursuit {
       // first storage retrieval
       Pursuit.ID_COUNTER = M.STORAGE.getNumber('highID');
     }
-    // make sure counter is further in future
+    // make sure counter is further in future (because of device time changes)
     Pursuit.ID_COUNTER = (d > Pursuit.ID_COUNTER) ? d : Pursuit.ID_COUNTER + 1;
     // store latest (new highest) value
     M.STORAGE.set('highID', Pursuit.ID_COUNTER);
@@ -37,6 +34,7 @@ export class Pursuit {
     Pursuit.PURSUITS = [];
     Pursuit.ID_COUNTER = null;
     if (wipe) M.STORAGE.clearAll();
+    // console.log("ALL KEYS", M.STORAGE.getAllKeys());
     console.log("STORAGE KEY COUNT:", (M.STORAGE.getAllKeys()).length);
 
     Pursuit.CIDs = M.STORAGE.contains('CIDs') ? JSON.parse(M.STORAGE.getString('CIDs')) : [];
@@ -48,56 +46,52 @@ export class Pursuit {
     return Pursuit.PURSUITS;
   }
 
-  static rollAll(){
-    console.log("Pursuit.ROLL ALL")
-    for(const p of Pursuit.PURSUITS){
-      p.checkRollOver();
-    }
-  }
-
   constructor(){
     this.tasks = [];
   }
 
-  get CID(){return this._CID;}
-  get name(){return this._name;}
-  get totalM(){return this._tM[this._tM.length - 1];}
-  get taskIDs(){return this._taskIDs;}
-  get colorScheme(){return this._colorScheme;}
-  get reminders(){return this._reminders;}
-  get sounds(){return this._sounds;}
-  get dayOfWeek(){return this._dayOfWeek;}
-  get paused(){return this._paused;}
-  get rM(){return this._rM;}
-  get cM(){return this._cM;}
-  get tM(){return this._tM;}
-  get oldStreak(){return this._oldStreak;}
-  get requiredMin() {return this._rM[Pursuit.RTI]}
-  get completeMin() {return this._cM[Pursuit.RTI]}
-  get updated(){return this._updated;}
+  get CID(){return this._CID};
+  get name(){return this._name};
+  get totalM(){return this._totalM};
+  get progress(){return this._progress};
+  get progDur(){return this._progDur};
+  get currentProgStart(){return this._currentProgStart};
+  get taskIDs(){return this._taskIDs};
+  get colorScheme(){return this._colorScheme}
+  get reminders(){return this._reminders}
+  get sounds(){return this._sounds}
+  get dayOfWeek(){return this._dayOfWeek}
+  get paused(){return this._paused};
+  // progress update (just use mod operator since start of task)
+  get lastUpdate(){return this._lastUpdate}
+  get minutes(){return this._minutes}
+  get requiredMin() {return this._minutes.required[0]}
+  get completeMin() {return this._minutes.complete[0]}
   get streak(){
-    // the last period will always be included in the streak
-    let sum = this._cM[0] >= this._rM[0] && this._rM[0] ? 1 : 0;
-    // if the last period is complete then add the oldStreak
-    if (sum) sum += this._oldStreak;
-
-    // this week is only added to the streak when complete
-    const thisP = this._cM[1] >= this._rM[1] && this._rM[1] ? 1 : 0;
-    // add the current week if it is complete
-    sum += thisP;
-    // next week is only added if this week is complete or has 0 required min
-    if (thisP || !this._rM[1]) sum += (this._cM[2] >= this._rM[2] && this._rM[2] ? 1 : 0);
-
-    return sum;
+    const today = this._minutes.complete[0] > this.minutes.required[0] ? 1 : 0;
+    const next = this._minutes.complete[1] > this.minutes.required[1] ? 1 : 0;
+    return this._minutes.oldStreak + today + (today > 0 ? next : 0)
   }
 
   set taskIDs(v){
     this._taskIDs = v;
     M.STORAGE.set(this._CID + '.taskIDs', JSON.stringify(v));
-  }
+  };
   set name(v){ 
     this._name = v;
     M.STORAGE.set(this._CID + '.name', v); 
+  }
+  set totalM(v){
+    this._totalM = v;
+    M.STORAGE.set(this._CID + '.totalM', v);
+  }
+  set progressDuration(v){
+    this._progDur = v;
+    M.STORAGE.set(this._CID + '.progDur', v);
+  }
+  set currentProgStart(dv){
+    this._currentProgStart = dv
+    M.STORAGE.set(this._CID + '.currentProgStart', this._currentProgStart); 
   }
   set colorScheme(v){
     this._colorScheme = v;
@@ -115,26 +109,6 @@ export class Pursuit {
     this._dayOfWeek = v;
     M.STORAGE.set(this._CID + '.dayOfWeek', v);
   }
-  set rM(v){ 
-    this._rM = v;
-    M.STORAGE.set(this._CID + '.rM', JSON.stringify(v));
-  }
-  set cM(v){ 
-    this._cM = v;
-    M.STORAGE.set(this._CID + '.cM', JSON.stringify(v));
-  }
-  set tM(v){ 
-    this._tM = v;
-    M.STORAGE.set(this._CID + '.tM', JSON.stringify(v));
-  }
-  set oldStreak(v){
-    this._oldStreak = v;
-    M.STORAGE.set(this._CID + '.oldStreak', v);
-  }
-  set updated(v){
-    this._updated = v;
-    M.STORAGE.set(this._CID + '.updated', v);
-  }
   set paused(v){
     // don't reset the pause-date if it already was paused
     if (v != false && this._paused != false) return;
@@ -144,18 +118,24 @@ export class Pursuit {
     this._paused = val;
     M.STORAGE.set(this._CID + '.paused', val);
   }
-
+  set lastUpdate(date){
+    this._lastUpdate = date.now();
+    M.STORAGE.set(this._CID + '.lastUpdate', this._lastUpdate)
+  }
+  set minutes(v){ 
+    this._minutes = v
+    M.STORAGE.set(this._CID + '.minutes', JSON.stringify(v));
+  }
 
   static CreateFromID(CID, key){
     const c = new Pursuit();
     c._CID = CID;
     c._name = M.STORAGE.getString(c._CID + '.name');
     c._totalM = M.STORAGE.getNumber(c._CID + '.totalM');
-    c._updated = M.STORAGE.getNumber(c._CID + '.updated');
-    c._oldStreak = M.STORAGE.getNumber(c._CID + '.oldStreak');
-    c._tM = JSON.parse(M.STORAGE.getString(c._CID + '.tM'));
-    c._cM = JSON.parse(M.STORAGE.getString(c._CID + '.cM'));
-    c._rM = JSON.parse(M.STORAGE.getString(c._CID + '.rM'));
+    c._minutes = JSON.parse(M.STORAGE.getString(c._CID + '.minutes'));
+    c._progress = JSON.parse(M.STORAGE.getString(c._CID + '.progress'));
+    c._progDur = M.STORAGE.getNumber(c._CID + '.progDur');
+    c._currentProgStart = new Date(M.STORAGE.getString(c._CID + '.currentProgStart'));
     const TIDs = M.STORAGE.getString(c._CID + '.taskIDs');
     c._taskIDs = TIDs ? JSON.parse(TIDs) : [];
     c._colorScheme = M.STORAGE.getNumber(c._CID + '.colorScheme');
@@ -172,10 +152,12 @@ export class Pursuit {
   static MakeNew(name, startOfWeek, colorScheme, notifications, sounds, initialHours){
     const c = new Pursuit();
     c._CID = 'c' + Pursuit.GET_NEXT_ID();
+    c._progress = [0];
     c._taskIDs = [];
 
     Pursuit.CIDs.push(c._CID);
     M.STORAGE.set('CIDs', JSON.stringify(Pursuit.CIDs));
+    M.STORAGE.set(c._CID + '.progress', JSON.stringify(c._progress));
     M.STORAGE.set(c._CID + '.taskIDs', JSON.stringify([]));
 
     c.name = name;
@@ -183,16 +165,19 @@ export class Pursuit {
     c.reminders = notifications;
     c.sounds = sounds;
     c.colorScheme = colorScheme;
+    c.totalM = initialHours * 60;
+    c.progressDuration = 1;
     c.paused = false;
     const dv = TimeDate.getRecentDateValOfDOW(startOfWeek);
     c.currentProgStart = dv;
 
-    c.rM = [0,0,0]; 
-    c.cM = [0,0,0];
-    c.tM = [initialHours * 60, initialHours * 60];
-    c.updated = dv;
-    c.oldStreak = 0,
-
+    c.minutes = {
+      // this period, next period
+      required: [0,0], 
+      complete: [0,0],
+      updated: dv,
+      oldStreak: 0,
+    };
     c.key = Pursuit.PURSUITS.length;
     Pursuit.PURSUITS.push(c);
     console.log(c);
@@ -200,42 +185,37 @@ export class Pursuit {
   }
 
   // add time to completed minutes for required tasks
-  registerTime(duration, dayAdjust){
-    const i = Pursuit.RTI + TimeDate.dayAdjustToPeriodAdjust(dayAdjust, this._dayOfWeek);
-    this._cM[i] += duration;
-    // use setter to store;
-    this.cM = this._cM;
-    // cache the old value
-    const oldM = this.totalM;
-    // always add to the latest total since cumulative
-    this._tM[this._tM.length - 1] += duration;
-    // if past period, also add to past period
-    if (i < 0) this._tM[this._tM.length -2] += duration;
-    this.tM = this._tM;
-    return pursuitAward(oldM, this.totalM);
+  registerTime(duration, futurePeriod=false){
+    console.log("REGISTER TIME (duration, futurePeriod):",duration, futurePeriod);
+    const index = futurePeriod ? 1 : 0;
+    console.log("minutes", '\n', '-----------', this._minutes);
+    this._minutes.complete[index] += duration;
+    // use setter to write to storage
+    console.log("minutes", '\n', '-----------', this._minutes);
+    console.log()
   }
 
   // adjust the REQUIRED minutes (not the minutes completed)
   adjustReqMin(thisPeriod, nextPeriod=false){
     const now = thisPeriod ? thisPeriod : 0;
     const next = nextPeriod ? nextPeriod : 0;
-    this._rM[Pursuit.RTI] += now; 
-    this._rM[Pursuit.RTI + 1] += next; 
+    const l = this._minutes.required.length;
+    this._minutes.required[l-2] += now; 
+    this._minutes.required[l-1] += next; 
     // use setter to write to storage
-    this.rM = this._rM;
-    console.log("THIS", now, "NEXT", next, '\n', this.rM);
+    this.minutes = this._minutes;
+    console.log("THIS", now, "NEXT", next, '\n', this.minutes);
+
   }
 
   addTask(task, id){
-    // const t = task
+    const t = task
     // console.log("ADDING TASK:\n", t.TID, t.pursuit.name, t.name, t.calcType, t.minDur, t.defaultDur, t.daysMap, t.streak, t.minutes, t.paused, t.taskOrder, t.reminders);
 
     // add a reference of the task to the tasks array
     this.tasks.push(task);
     // add the task to the array of task IDs
     this._taskIDs.push(id);
-
-    this.adjustReqMin(...task.calcReqMinFromNow());
 
     // update the task ids in storage
     M.STORAGE.set(this._CID + '.taskIDs', JSON.stringify(this._taskIDs));
@@ -269,47 +249,41 @@ export class Pursuit {
     for(const t of this.tasks) t.delete(false);
     M.STORAGE.set('CIDs', JSON.stringify(Pursuit.CIDs));
     M.STORAGE.delete(this._CID + '.taskIDs');
-    M.STORAGE.delete(this._CID + '.tM');
-    M.STORAGE.delete(this._CID + '.cM');
-    M.STORAGE.delete(this._CID + '.rM');
+    M.STORAGE.delete(this._CID + '.minutes');
+    M.STORAGE.delete(this._CID + '.progress');
     M.STORAGE.delete(this._CID + '.name');
+    M.STORAGE.delete(this._CID + '.totalM');
+    M.STORAGE.delete(this._CID + '.progDur');
+    M.STORAGE.delete(this._CID + '.currentProgStart');
     M.STORAGE.delete(this._CID + '.colorScheme');
     M.STORAGE.delete(this._CID + '.reminders');
     M.STORAGE.delete(this._CID + '.sounds');
     M.STORAGE.delete(this._CID + '.dayOfWeek');
     M.STORAGE.delete(this._CID + '.paused');
-    M.STORAGE.delete(this._CID + '.updated');
-    M.STORAGE.delete(this._CID + '.oldStreak');
 
     // re-index the keys
     Pursuit.PURSUITS.forEach((p, i) => p.key = i);
+
     callBack?.();
   }
 
+
   checkRollOver(){
-    let reqMin = 0;
-    this.tasks.forEach(t => {
-      t.checkRollOver();
-      reqMin += t.newPeriodRequiredMinutes();
-    });
+    if (!TimeDate.isMoreThanWeek(this._minutes.updated)) return;
 
-    if (!TimeDate.isMoreThanWeek(this._updated)) return;
-
-    const [pCount, dVal] = TimeDate.calcPeriodsFrom7DayRollover(this._updated);
-
-    for(let i = 0; i < pCount; i++){
-      this._rM.shift();
-      this._rM.push(reqMin);
-      this._cM.shift();
-      this._cM.push(0);
-      // no need to update if no time has been registered yet
-      if(this._tM.length > 2 || this._tM[1] != 0)
-        this._tM.push(this._tM[this._tM.length - 1]);
+    const [p, dVal] = TimeDate.calcPeriodsFrom7DayRollover(this._minutes.updated);
+    if (p < 1) return;
+    const m = this._minutes;
+    for(let i = 0; i < p; i++){
+      if (m[0].complete >= m[0].required && m[0].required != null) m.oldStreak++;
+      else m.oldStreak = 0;
+      m[0].required = m[1].required;
+      m[0].complete = m[1].complete;
+      // the future required should not change
+      m[1].complete = 0;
     }
 
-    this.updated = TimeDate.getRecentDateValOfDOW(this._dayOfWeek, dVal);
-    this.rM = this._rM;
-    this.cM = this._cM;
-    this.tM = this._tM;
+    m.updated = TimeDate.getRecentDateValOfDOW(this._pursuit.dayOfWeek, dateVal);
+    this.minutes = m;
   }
 }

@@ -1,8 +1,8 @@
-import { memo } from 'react';
-import { StyleSheet, Text, View, Pressable, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, View, Pressable, TouchableOpacity, Dimensions } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { TimeBar } from './timeBar';
 import { router } from 'expo-router';
+import { PursuitGraph } from './pursuitGraph.js';
 import { TaskCell } from './taskCell.js';
 import { Hamburger } from './hamburger.js';
 import { Star } from './star.js';
@@ -13,6 +13,7 @@ export function PursuitCell(p) {
   const h = e?.totalM ? Math.trunc(e.totalM / 60) : 0;
   const m = e?.totalM ? e.totalM % 60 : 0;
   const expanded = p?.expanded;
+  const width = Dimensions.get('window').width;
 
   const FullBar = () => {
     return (
@@ -21,7 +22,7 @@ export function PursuitCell(p) {
           <Star style={s.star} color={UI.colors[e.colorScheme].contrast}>{e.streak}</Star>
         </View>
         <View style={s.statsContain}>
-          <Text style={[s.time, {color:UI.colors[e.colorScheme].contrast}]}>
+          <Text style={[s.time]}>
             {String(h) + 'h' + String(m) + 'm'}
           </Text>
           <View style={s.barHeight}>
@@ -45,7 +46,9 @@ export function PursuitCell(p) {
         
         </View>
         <View style={s.openBarItem}>
-          <Text style={s.streakWeeks}>{e.streak}W</Text>
+          <Text style={[s.streakWeeks, {color: UI.colors[e.colorScheme].contrast}]}>
+            {e.streak}W
+          </Text>
         </View>
         <View style={[s.barHeight, s.openTimeBar]}>
           <TimeBar radius={7} timeComplete={e.completeMin} timeRequired={e.requiredMin} 
@@ -67,14 +70,24 @@ export function PursuitCell(p) {
       style={[s.container, {backgroundColor: UI.colors[e.colorScheme].medium},
         expanded ? s.expandedContain : null]}
       >
-      {!expanded ? <View style={s.absoluteBack}></View> : null}
+      {!expanded 
+        ? <View style={s.absoluteBack}>
+            <PursuitGraph 
+              style={s.graph} 
+              width={width - 55} 
+              height={95}
+              color={UI.colors[e.colorScheme].contrast}
+              values={e.tM}
+            />
+          </View> 
+        : null}
 
       {/* TITLE BAR */}
       <View style={[s.titleBar]}>
         <Text style={s.title}>{e?.name}</Text>
 
         { expanded 
-          ? <Text style={[s.time, {color:UI.colors[e.colorScheme].contrast}]}>
+          ? <Text style={[s.time]}>
               {String(h) + 'h' + String(m) + 'm'}
             </Text>
           : <Hamburger 
@@ -87,7 +100,7 @@ export function PursuitCell(p) {
       </View>
 
       {/* Cell Holder */}
-      <View style={s.cellContain}>
+      <View >
       { !expanded 
         ? <View style={{height: 75}}/> 
         : ( cells.length > 0 
@@ -97,6 +110,7 @@ export function PursuitCell(p) {
       }
       </View>
 
+      {/* Bottom Bar */}
       { expanded ? <Bar/> : <FullBar/>}
     </Pressable>
   );
@@ -137,7 +151,16 @@ const s = StyleSheet.create({
     top: 0,
     width: '100%',
     height: '100%',
-    margin: 1
+    alignItems: 'center',
+    justifyContent: 'center',
+    margin: 1,
+    padding: 2.5,
+  },
+  graph: {
+    width: '100%',
+    height: '100%',
+    paddingTop: 40,
+    paddingLeft: 30,
   },
   titleBar: {
     height: 45,
@@ -186,6 +209,7 @@ const s = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     textAlign: 'right',
+    color: '#fff',
     paddingRight: 2
   },
   openBarContain: {

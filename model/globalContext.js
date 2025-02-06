@@ -15,12 +15,17 @@ export const ModelContext = (p) => {
   );
 }
 
-function model(refresh, didNewTabShow){
+function model(refresh){
   return {
     PURSUITS: Pursuit.PURSUITS,
     TASKS: Task.TASKS,
     refresh: refresh,
     getTasks: Task.getTasks,
+    rollAll: Pursuit.rollAll,
+    wipeAll: ()=>{
+      Pursuit.initialize(true);
+      Task.initialize([]);
+    }
   }
 }
 

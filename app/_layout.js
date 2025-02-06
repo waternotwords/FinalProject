@@ -23,8 +23,6 @@ Notifications.setNotificationHandler({
 
 const shouldResetStorage = false;
 
-
-
 export default function Layout(){
   const [modelReady, setModelReady] = useState(false);
 

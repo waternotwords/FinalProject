@@ -56,7 +56,7 @@ export function TaskCell(p) {
           setRewards(rewards.concat(e.registerTime(e.defaultDur, activeDay)));
           refresh();  
         }}>
-          { complete >= required 
+          { complete >= required && complete > 0
             ? <FontAwesome6 name="face-smile-beam" size={36} color="black" style={s.face}/>
             : <MaterialIcons name='check-circle-outline' size={41} color='#000' style={s.check}/>
           }
@@ -77,7 +77,7 @@ export function TaskCell(p) {
               color= {'#000'}
             />
           : <TouchableOpacity onPress={()=>{
-              Ui.setTimeColByI(e.pursuit.colorScheme);
+              UI.setTimeColByI(e.pursuit.colorScheme);
               router.replace({pathname:'/timer', params: {task: e.taskOrder}});
           }}>
               <MaterialCommunityIcons name="timer" size={41} color={'#000'}/>
@@ -86,7 +86,7 @@ export function TaskCell(p) {
       </View>
       { !isPast  
         ? <View style={s.streakBarHolder}>
-            { e.calcType > 0 && !e.paused 
+            { e.streakBar && e.calcType > 0 && !e.paused 
               ? <StreakBar widths={e.streakBar} color={colors.dark}/> 
               : null 
             }
@@ -95,10 +95,23 @@ export function TaskCell(p) {
       }
 
       <View style={s.bottomRow}>
-        <View style={isPast ? s.extendedTimeBar : s.timeBar}>
-          <TimeBar timeComplete={complete} timeRequired={e.calcType == -1 ? e.defaultDur : required} 
-                   barColor={colors.contrast}/>
+        <View style={[
+          isPast ? s.extendedTimeBar : s.timeBar, 
+          e.calcType <= 0 ? s.longTimeBar : null
+        ]}>
+          <TimeBar 
+            timeComplete={complete} 
+            timeRequired={e.calcType == -1 ? e.defaultDur : required} 
+            barColor={colors.contrast}
+            radius={3}
+          />
         </View>
+        { e?.calcType == 0
+          ? <TouchableOpacity style={[s.finished, {backgroundColor: colors.dark}]}>
+              <Text style={s.finishedTxt}>Finished</Text>
+            </TouchableOpacity>
+          : null
+        }
         { e?.calcType > 0 && !isPast // only daily & 7 day tasks
           ? <Text style={s.streakDur}>{e?.streak + streakStr}</Text> 
           : null
@@ -227,11 +240,26 @@ const s = StyleSheet.create({
     width: '40%',
     height: 25
   },
+  longTimeBar: {
+    width: '65%',
+  },
   extendedTimeBar: {
     width: '100%',
     height: 24,
     paddingRight: 4,
     marginTop: 3,
+  },
+  finished: {
+    height: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 3,
+    borderWidth: 1,
+    paddingHorizontal: 4,
+  },
+  finishedTxt: {
+    color: '#fff',
+    fontSize: 18,
   },
   paused: {
     position: 'absolute',

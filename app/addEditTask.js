@@ -277,12 +277,11 @@ const getNewState = (pursuit) => ({
 });
 
 const existingTaskState = (task) => {
-  console.log(task.name, task.reminders, TimeDate.twelveHourTimeStr(task.reminderTime));
   return ({
   name: task.name,
   pursuit: task.pursuit,
   calcType: task.calcType,
-  daysMap: task.daysMap,
+  daysMap: [...task.daysMap],
   minDur: task.minDur,
   defaultDur: task.defaultDur,
   reminders: task.reminders,
@@ -299,10 +298,9 @@ const createNew = (tData, params)=>{
 
   const minDur = (tData.calcType == TimeDate.calcPeriod[3]) ? 0 : tData.minDur;
 
-  // console.log(tData.pursuit.name, tData.name, tData.calcType, minDur, tData.defaultDur, tData.daysMap, tData.reminders);
-
-  const t = Task.MakeNew(tData.pursuit, tData.name, tData.calcType, minDur, 
-                          tData.defaultDur, tData.daysMap, tData.reminderTime, tData.reminders);
+  const t = Task.MakeNew(tData.pursuit, tData.name, tData.calcType, 
+                         minDur, tData.defaultDur, tData.daysMap, 
+                         tData.reminderTime, tData.reminders);
 
 
   router.back();
@@ -315,6 +313,9 @@ const editTask = (task, tData, params) => {
   if (tData.name.length < 1) return missingName();
   if (tData.pursuit == null) return missingPursuit();
 
+  console.log(tData);
+  task.print();
+
   // check if data has not changed just go back
   if(!changesHaveBeenMade(task, tData)){ 
     router.back();
@@ -322,30 +323,33 @@ const editTask = (task, tData, params) => {
     return
   // otherwise refresh is needed
   } 
-  
-  // if (task.calcType != tData.calcType) console.log("addEditTask.js");
 
-  task.name = tData.name;
-  task.pursuit = tData.pursuit;
-  task.daysMap = tData.daysMap;
-  task.defaultDur = tData.defaultDur;
-  task.reminderTime = tData.reminderTime;
-  task.reminders = tData.reminders;
-  const minDur = (tData.calcType == TimeDate.calcPeriod[3]) ? 0 : tData.minDur;
-  task.minDur = minDur;
-  task.calcType = tData.calcType;
+  Task.Edit(
+    task,
+    tData.name,
+    tData.pursuit,
+    tData.daysMap,
+    tData.defaultDur,
+    tData.reminderTime,
+    tData.reminders,
+    (tData.calcType == TimeDate.calcPeriod[3]) ? 0 : tData.minDur,
+    tData.calcType,
+  );
+
   router.back();
   router.setParams({...params, task:'', refresh:'true'}); 
 }
 
 
+
 const changesHaveBeenMade = (task, tData)=>{
   if (!task) return true;
+
   if(
     task.name == tData.name &&
     task.pursuit == tData.pursuit &&
     task.calcType == tData.calcType &&
-    task.daysMap == tData.daysMap &&
+    Task.DaysMapChanged(task.daysMap, tData.daysMap) &&
     task.defaultDur == tData.defaultDur &&
     task.reminders == tData.reminders &&
     task.reminderTime.valueOf() == tData.reminderTime.valueOf() &&

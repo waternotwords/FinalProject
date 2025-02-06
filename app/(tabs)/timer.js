@@ -159,7 +159,11 @@ export default function Tab(){
   const stop = (clearAll)=>{
     cancelTimer();
     if (playRef.current) clearTimeout(playRef.current);
-    if (clearAll) color.resetTimeC();
+    
+    if (clearAll){
+      color.resetTimeC();
+      setDropState({p: null, t: null, i: null});
+    } 
     
     setTime({playing: false, elapsed: 0, startTime: 0});
     wipeCache();

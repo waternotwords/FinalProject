@@ -1,23 +1,53 @@
 import { TimeDate } from "./time";
 const min = (m) => m == 1 ? '1 minute' : String(m) + ' minutes';
 
+const pAwards = [
+  [2,         'A 1st step, a new possibility'],
+  [25*60,     'Working toward what counts'],
+  [50*60,     'Habits serving what matters'],
+  [75*60,     'Every step,one direction'],
+  [100*60,    'Centurion challenge complete'],
+  [250*60,    'New status: earnest novice'],
+  [500*60,    'Upgraded to refined novice'],
+  [750*60,    'Approaching awesome heights'],
+  [1000*60,   'Awesomely Intermediate'],
+  [1250*60,   'New status: high intermediate'],
+  [1500*60,   'Approaching advanced tier'],
+  [1750*60,   'Advanced dedication evident'],
+  [2000*60,   'Time on target; two thousand'],
+  [2250*60,   'Aspiring technician develops'],
+  [2500*60,   'New status: technician'],
+  [2750*60,   'Experienced technician'],
+  [3000*60,   '3000 reasons to celebrate'],
+  [3500*60,   'New status: craftsperson'],
+  [4000*60,   'New status: operative'],
+  [4500*60,   'New status: specialist'],
+  [5000*60,   'New status: ace specialist'],
+  [6000*60,   'New status: expert'],
+  [7000*60,   'New status: hallowed hero'],
+  [8000*60,   'New status: righteous rockstar'],
+  [9000*60,   'New status: divine guru'],
+  [10000*60,  'New status: 10000 Hour Master'],
+  [12000*60,  'New status: Grand Master'],
+  [14000*60,  'Enlightened Grand Master'],
+]
 
-const pursuitAwards = (oldPurM, newPurM) => {
-  const awards = [];
+export const pursuitAward = (oldPurM, newPurM) => {
   for(let i = 0; i < pAwards.length; i++){
     const a = pAwards[i];
     // if (newPurM < a[0] && oldPurM <a [0]) break;
 
-    if (oldPurM < a[0] && newPurM >= a[0]) awards.push({
+    if (oldPurM < a[0] && newPurM >= a[0]) return [{
       title: a[0] == 2 
         ? 'First Step: ' + min(newPurM)
         : 'Pursuit: ' + String(a[0] / 60) + 'h+',
       message: a[1],
       star: a[0] == 2 ? newPurM : a[0] / 60
-    });
+    }];
   }
-  return awards;
+  return [];
 }
+
 
 const streakAwards = (oldS, newS, calcType) => {
   const awards = [];
@@ -79,14 +109,12 @@ const resumeAward = () => {
   }]
 } 
 
-export const getAwardData = (calcType, oldTaskM, newTaskM, oldPurM, newPurM, oldS, newS, restarted) => {
-  const p = pursuitAwards(oldPurM, newPurM);
+export const getAwardData = (calcType, oldTaskM, newTaskM, oldS, newS) => {
   const s = calcType > 0 ? streakAwards(oldS, newS, calcType) : [];
-  const t = taskTimeAwards(oldTaskM, newTaskM);
-  // const b = restarted ? resumeAward(p.length, t.length) : [];
-  
-  const out = p.concat(s, t);
-  console.log("AWARDS", '\n', "------", '\n', calcType, oldTaskM,  newTaskM, oldPurM, newPurM, oldS, newS, '\n', p, s, t ,'\n', out);
+  const t = taskTimeAwards(oldTaskM, newTaskM);  
+  const out = s.concat(t);
+
+  console.log("AWARDS", '\n', "------", '\n', calcType, oldTaskM,  newTaskM, oldS, newS, '\n', out);
 
   return out;
 }
@@ -103,33 +131,4 @@ const bAwards = [
 ]
 
 
-const pAwards = [
-  [2,         'A 1st step, a new possibility'],
-  [25*60,     'Working toward what counts'],
-  [50*60,     'Habits serving what matters'],
-  [75*60,     'Every step,one direction'],
-  [100*60,    'Centurion challenge complete'],
-  [250*60,    'New status: earnest novice'],
-  [500*60,    'Upgraded to refined novice'],
-  [750*60,    'Approaching awesome heights'],
-  [1000*60,   'Awesomely Intermediate'],
-  [1250*60,   'New status: high intermediate'],
-  [1500*60,   'Approaching advanced tier'],
-  [1750*60,   'Advanced dedication evident'],
-  [2000*60,   'Time on target; two thousand'],
-  [2250*60,   'Aspiring technician develops'],
-  [2500*60,   'New status: technician'],
-  [2750*60,   'Experienced technician'],
-  [3000*60,   '3000 reasons to celebrate'],
-  [3500*60,   'New status: craftsperson'],
-  [4000*60,   'New status: operative'],
-  [4500*60,   'New status: specialist'],
-  [5000*60,   'New status: ace specialist'],
-  [6000*60,   'New status: expert'],
-  [7000*60,   'New status: hallowed hero'],
-  [8000*60,   'New status: righteous rockstar'],
-  [9000*60,   'New status: divine guru'],
-  [10000*60,  'New status: 10000 Hour Master'],
-  [12000*60,  'New status: Grand Master'],
-  [14000*60,  'Enlightened Grand Master'],
-]
+

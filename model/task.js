@@ -1,14 +1,16 @@
 import { Storage } from './storage';
 import { Pursuit } from './pursuit';
-import { getAwardData } from './awards';
 import { TimeDate } from './time';
 import { Notify } from './notifications';
+import { getAwardData } from './awards';
 
 const M = Storage();
 
 export class Task {
   static TASKS = [];
   static ACTIVE = null;
+  // complete array: TODAY's index
+  static CTI = 6;
 
   static initialize(pursuitArray){
     Task.TASKS = [];
@@ -16,261 +18,131 @@ export class Task {
       for(const id of p.taskIDs){
         const t = Task.CreateFromID(id, p);
         p.tasks.push(t);
-        t.checkRollOver();
       }
+      p.checkRollOver();
     }
     Task.TASKS.sort((a,b)=>a.taskOrder-b.taskOrder);
-
-    Task.TASKS.forEach(e=>console.log(e.name, e.pursuit.name));
-
-    // console.log("ALL KEYS:\n", M.STORAGE.getAllKeys());
+    // Task.TASKS.forEach(e=>e.print());
   }
 
-  constructor(){
-    this._pursuit = null;
-    this._streak = null;
-    this._minDur = 0;
+  static taskTypeChooser(calcType){
+    if (calcType == -1) return new AnytimeTask();
+    else if (calcType == 0) return new OnceTask();
+    else if (calcType == 1) return new DailyTask();
+    else if (calcType == 7) return new WeeklyTask();
   }
-
-  get TID(){ return this._TID };
-  get pursuit(){ return this._pursuit };
-  get name(){ return this._name };
-  get calcType(){ return this._calcType };
-  get defaultDur(){ return this._defaultDur };
-  get daysMap(){ return this._daysMap };
-  get totalM(){ return this._totalM };
-  get minutes(){ return this._minutes };
-  get paused(){ return this._paused };
-  get taskOrder(){ return this._taskOrder};
-  get minDur(){ return this._minDur };
-  get streakBar(){ return this._minutes.streakBar };
-  get reminders(){return this._notifyTime > 0 && this?.pursuit?.reminders && Notify.STATUS.canSend } 
-  get notifyIDs(){ return this._notifyIDs };
-  get reminderTime(){ return new Date (Math.abs(this._notifyTime))}
-  // lazy instantiation as cells are displayed (since flashlist makes this fast)
-  get streak(){
-    if (this._streak == null) this._streak = this.calcStreak();
-    return this._streak;
-  }
-
-  // req(i){ return this._minutes.required[i] }
-  // com(i){ return this._minutes.complete[i] }
-  // setReq(i,v){ this._minutes.required[i] = v }
-  // setCom(i,v){ this._minutes.required[i] = v }
-
-  set pursuit(v){
-    this._pursuit = v;
-  }
-  set name(v){ 
-    this._name = v
-    M.STORAGE.set(this._TID + '.name', v); 
-  }
-  set calcType(v){ 
-    this._calcType = v
-    M.STORAGE.set(this._TID + '.calcType', v); 
-  }
-  set defaultDur(v){ 
-    this._defaultDur = v
-    M.STORAGE.set(this._TID + '.defaultDur', v); 
-  }
-  set totalM(v){ 
-    this._totalM = v
-    M.STORAGE.set(this._TID + '.totalM', v); 
-  }
-  set minutes(v){ 
-    this._minutes = v
-    M.STORAGE.set(this._TID + '.minutes', JSON.stringify(v));
-  }
-  set notifyIDs(v){
-    this._notifyIDs = v;
-    M.STORAGE.set(this._TID + '.notifyIDs', JSON.stringify(v));
-  }
-  set reminders(v){
-    if (v) {
-      this.cancelNotify();
-      this.setNotify(true);
-      this._notifyTime = Math.abs(this._notifyTime);
-    } else {
-      this.cancelNotify();
-      this._notifyTime = Math.abs(this._notifyTime) * -1;
-    }
-    this.notifyTime = this._notifyTime;
-  }
-  set notifyTime(v){
-    this._notifyTime = v;
-    M.STORAGE.set(this._TID + '.notifyTime', v);
-  }
-  set reminderTime(v){
-
-    this.setNotify(true)
-    let t = v.valueOf();
-    if (this._notifyTime < 0) t *= -1;
-    // use setter to store
-    this.notifyTime = t;
-  }
-  set paused(v){
-    // don't reset the pause-date if it already was paused
-    if (v != false && this._paused != false) return;
-
-    if (v != false) this.removeIncompletePursuitMinutes(); 
-    else this.restorePausedMinutes();
-
-    this.storePause(v);
-  }
-  set taskOrder(v){
-    this._taskOrder = v;
-    M.STORAGE.set(this._TID + '.taskOrder', v);
-  }
-  set minDur(v){ 
-    const [reqMin, nextReqMin] = this.calcReqMin(true);
-    this._minDur = v;
-    M.STORAGE.set(this._TID + '.minDur', v); 
-
-    // prevents _minutes from being used by accident before it exists
-    if (!this._minutes) 
-      return console.warn('Task._minutes must be set before minDur');
-
-    const todayI = this._minutes.required.length - 2;
-    if (this._minutes.required[todayI] != null) this._minutes.required[todayI] = v;
-    // for daily and 7-day tasks tomorrow needs to also be set
-    if (this.calcType > 0 && this._minutes.required[todayI + 1] != null) 
-      this._minutes.required[todayI + 1] = v;
-    // use setter to update storage
-    this.minutes = this._minutes;
-    // no need to adjust required minutes for Once and Anytime tasks
-    if(this._calcType < 1) return;
-    const [newReqMin, newNextReqMin] = this.calcReqMin(true);
-    // adjust pursuit required minutes remaining
-    this.pursuit.adjustReqMin(newReqMin - reqMin, newNextReqMin - nextReqMin);
-  }
-  set daysMap(v){ 
-    // calculate old requirements BEFORE saving map which it depends on
-    const [reqMin, nextReqMin] = this.calcReqMin(true);
-    // store old map to compare for finding changes
-    const oldMap = this._daysMap;
-    // write the changes
-    this._daysMap = v;
-    this.storeMap(this._daysMap);
-
-    // if daily task then changing day map will change time requirements
-    if(this._calcType == 1){
-      const todayI = this._minutes.required.length - 2;
-      const today = TimeDate.getDay();
-
-      if (v[today] && !oldMap[today])
-        this._minutes.required[todayI] = this._minDur;
-      else if (!v[today] && oldMap[today])
-        this._minutes.required[todayI] = 0;
-      
-      const tomorrow = (today + 1) % 7;
-      if (v[tomorrow] && !oldMap[tomorrow])
-        this._minutes.required[todayI + 1] = this._minDur; 
-      else if (!v[tomorrow] && oldMap[tomorrow])
-        this._minutes.required[todayI + 1] = 0;
-
-      // use setter to write minutes to storage
-      this.minutes = this._minutes;
-      // after saving the minutes calculate the new time requirements
-      const [newReqMin, newNextReqMin] = this.calcReqMin(true);
-
-      // adjust pursuit required minutes remaining
-      this.pursuit.adjustReqMin(newReqMin - reqMin, newNextReqMin - nextReqMin);
-
-      this.cancelNotify();
-      this.setNotify();
-    }
-  }
-  storePause(v){
-    this._paused = (v == false) ? 0 : TimeDate.now();
-    M.STORAGE.set(this._TID + '.paused', (v == false) ? 0 : this._paused.valueOf());
-  }
-
-  storeMap(m){
-    const daysInt = parseInt(m.map(e => e ? '1' : '0').join(''), 2);
-    M.STORAGE.set(this._TID + '.daysMap', daysInt); 
-  }
-
-
-
-  static CreateFromID(TID, pursuit){
-    const t = new Task();
-    t._TID = TID;
-    t._pursuit = pursuit;
-    t._name = M.STORAGE.getString(t._TID + '.name');
-    t._calcType = M.STORAGE.getNumber(t._TID + '.calcType');
-    t._defaultDur = M.STORAGE.getNumber(t._TID + '.defaultDur');
-    t._minDur = M.STORAGE.getNumber(t._TID + '.minDur');
-    const days = M.STORAGE.getNumber(t._TID + '.daysMap');
-    t._daysMap = days.toString(2).split('').map(e => e == '1');
-    t._totalM = M.STORAGE.getNumber(t._TID + '.totalM');
-    t._minutes = JSON.parse(M.STORAGE.getString(t._TID + '.minutes'));
-    const p = M.STORAGE.getNumber(t._TID + '.paused');
-    t._paused = (p && p > 0) ? new Date(p) : false;
-    t._taskOrder = M.STORAGE.getNumber(t._TID + '.taskOrder');
-    t._notifyTime = M.STORAGE.getNumber(t._TID + '.notifyTime');
-    t._notifyIDs = JSON.parse(M.STORAGE.getString(t._TID + '.notifyIDs'));
-    Task.TASKS.push(t);
-    return t;
-  }
-
 
   // make new TASK and save in STORAGE 
   // passing a number to thisWeekReq can be used to modify minutes for 1st week
-  static MakeNew(pursuit, name, calcType, minDur, defaultDur, daysMap, time, reminders, thisWeekReq = null){
-    const t = new Task();
-    t.pursuit = pursuit;
-    t._TID = Pursuit.GET_NEXT_ID();
+  static MakeNew(pursuit, name, calcType, minDur, defaultDur, daysMap, reminderTime, reminders, thisWeekReq = null, existingID = null){
+    const t = Task.taskTypeChooser(calcType);
+    t._pursuit = pursuit;
+    t._TID = existingID ? existingID : Pursuit.GET_NEXT_ID();
     t.name = name;
-    // oneTime/anyTime/daily/week (-1, 0, 1, 7)
-    t.calcType = calcType;
     t.defaultDur = defaultDur;
     t.totalM = 0; 
-    t.storePause(false)   
     t.taskOrder = (Task.TASKS.length);
-    t.notifyTime = time * (reminders ? 1 : -1);
-    pursuit.addTask(t, t.TID);
-    Task.TASKS.push(t);
-    // days map setter recalculates required minutes so store using storeMap()
-    t._daysMap = daysMap;
-    t.storeMap(daysMap);
-    const dv = TimeDate.todayDateVal();
-
-    // 7 day broken into 3 periods (last, current, next)
-    if (calcType == 7) 
-      t.minutes = {
-        required: [0, thisWeekReq == null ? minDur : thisWeekReq, minDur], 
-        complete: [0,0,0],
-        streakBar:[0,0,0,0],
-        updated: TimeDate.getRecentDateValOfDOW(t.pursuit.dayOfWeek), 
-        oldStreak: 0,
-      };
-    // once
-    else if (calcType == 0) 
-      t.minutes = {required:[minDur], complete:[0], oldStreak:0, updated:dv};
-    // anytime
-    else if (calcType == -1)
-      t.minutes = {required:[defaultDur], complete:[0], oldStreak:0, updated:dv};
-    // daily (last 6 days, today, tomorrow)
-    else {
-      const today = TimeDate.getDay();
-      t.minutes = {
-        required: [null,null,null,null,null,null,
-                  daysMap[today] ? minDur : null, (daysMap[(today + 1) % 7]) ? minDur : null],
-        complete: [0,0,0,0,0,0,0,0],
-        streakBar:[0,0,0,0,0,0,0],
-        updated: dv,
-        oldStreak: 0,
-      }
-    }
-    // use setter which calculates the required minutes everywhere
-    t.minDur = minDur;
     t.notifyIDs = [];
+    t.reminders = reminders;
+    t.reminderTime = reminderTime;
+    t.cM = [0,0,0,0,0,0,0,0];
+
+    // the setters for these valuess recalculate stuff so just store
+    t.storeCalcType(calcType); 
+    t.storeMap(daysMap);
+    t.storePauseState(false);
+
+    // use subclass initializer
+    t.initialize(minDur, daysMap, t.pursuit.dayOfWeek, thisWeekReq);
+
+    if(existingID == null){
+      pursuit.addTask(t, t.TID);
+      Task.TASKS.push(t);
+    }
+
     if (t.reminders) t.setNotify();
+    console.log("MAKE NEW");
+    t.print();
     return t;
   }
 
+  static DaysMapChanged(a1,a2){
+    for(const i = 0; i < a1.length; i++){
+      if (a1[i] != a2[i]) return false;
+      return true
+    }
+  }
 
-  static getTasks(dayAdjuster){
+  static Edit(task, name, pursuit, daysMap, defaultDur, reminderTime, reminders, minDur, calcType){    
+    task.pursuit = pursuit;
+
+    if (task.calcType != calcType){
+      const time = task.totalM;
+      const tIndex = Task.TASKS.indexOf(task);
+      const pIndex = pursuit.tasks.indexOf(task);
+      task.delete();
+      const t = Task.MakeNew(pursuit, name, calcType, minDur, defaultDur, daysMap, reminderTime, reminders, null, task._TID);
+
+      // add back the time and the notifications
+      t.totalM = time;
+      t.TID = task._TID;
+      // add the task at the appropriate indices
+      Task.TASKS.splice(tIndex, 0, t);
+      t._taskOrder = tIndex;
+      pursuit.tasks.splice(tIndex, 0, t);
+      t.print();
+      console.log("#############");
+      for (const ta of Task.TASKS) console.log(ta.name, ta.calcType);
+      for (const pt of t.pursuit.tasks) console.log(pt.name, pt.calcType);
+      for (const id of t.pursuit.taskIDs) console.log(id);
+      return t;
+    }
+    
+    task.name = name;
+    task.daysMap = daysMap;
+    task.defaultDur = defaultDur;
+    task.minDur = minDur;
+    task.reminderTime = reminderTime;
+    task.reminders = reminders;
+    
+
+    return task;
+  }
+
+  static CreateFromID(TID, pursuit){
+    const calcType = M.STORAGE.getNumber(TID + '.calcType');
+    const t = Task.taskTypeChooser(calcType);
+    
+    t._calcType = calcType;
+    t._TID = TID;
+    t._pursuit = pursuit;
+    t._name = M.STORAGE.getString(t._TID + '.name');
+    t._updated = M.STORAGE.getNumber(t._TID + '.updated');
+    t._cM = JSON.parse(M.STORAGE.getString(t._TID + '.cM'));
+    t._defaultDur = M.STORAGE.getNumber(t._TID + '.defaultDur');
+    const days = M.STORAGE.getNumber(t._TID + '.daysMap');
+    t._daysMap = days.toString(2).split('').map(e => e == '1');
+    t._daysMap.shift();
+    t._totalM = M.STORAGE.getNumber(t._TID + '.totalM');
+    const p = M.STORAGE.getNumber(t._TID + '.paused');
+    t._paused = (p && p > 0) ? new Date(p) : false;
+    t._taskOrder = M.STORAGE.getNumber(t._TID + '.taskOrder');
+    t._reminderTime = M.STORAGE.getNumber(t._TID + '.reminderTime');
+    t._reminders = M.STORAGE.getBoolean(t._TID + '.reminders');
+    t._notifyIDs = JSON.parse(M.STORAGE.getString(t._TID + '.notifyIDs'));
+    t._minDur = M.STORAGE.getNumber(t._TID + '.minDur');
+
+    if (calcType > 0){
+      t._streakBar = JSON.parse(M.STORAGE.getString(t._TID + '.streakBar'));
+      t._oldStreak = M.STORAGE.getNumber(t._TID + '.oldStreak');
+      t._rM = JSON.parse(M.STORAGE.getString(t._TID + '.rM'));
+      if (calcType == 7) t._pcM = JSON.parse(M.STORAGE.getString(t._TID + '.pcM'));
+    }
+    Task.TASKS.push(t);
+    return t;
+  }
+
+  static getTasks(dayAdjust){
     const once = [];
     const tasks = [];
     const anyTime = [];
@@ -283,25 +155,22 @@ export class Task {
 
       // if daily task
       if (t.calcType == 1){
-        const indexToday = t.minutes.required.length - 2;
-        // if due on viewed day
-        if (t.minutes.required[indexToday + dayAdjuster]) tasks.push(t);
+        // if due on viewed day or minutes complete on that day
+        if (t._rM[DailyTask.RTI + dayAdjust] || t._cM[Task.CTI + dayAdjust]) tasks.push(t);
         // if viewing todays tasks & task is due tomorrow
-        if (dayAdjuster == 0 && t.minutes.required[indexToday + 1]){
-          // if already complete today, show in tomorrow section
-          if (complete >= required) tomoTasks.push(t);
-        }
+        if (dayAdjust == 0 && t._rM[DailyTask.RTI+1] && complete >= required) 
+          tomoTasks.push(t);
       // if weekly task
       } else if (t.calcType == 7){
         // always show weekly tasks
         tasks.push(t); 
         // if new period starts tomorrow & this period's minutes complete, show in tomorrow
-        if (dayAdjuster == 0 && complete >= required 
+        if (dayAdjust == 0 && complete >= required 
             && t.pursuit.dayOfWeek == (TimeDate.getDay() + 1) % 7)
           tomoTasks.push(t);
       }  
-      // if active day is today
-      else if (dayAdjuster == 0){
+      // if once/anytime task & active day is today or minutes complete on that day
+      else if (dayAdjust == 0 || t._cM[Task.CTI + dayAdjust]){
         // if do once type
         if (t.calcType == 0) once.push(t);
         // if anytime type
@@ -311,260 +180,170 @@ export class Task {
     return {current: tasks, once: once, anyTime: anyTime, tomorrow: tomoTasks};
   }
 
-
-  // calculate total required minutes for this period & for next period
-  calcReqMin(ignorePastDays = false){
-    if (!this?._minDur) this._minDur = 0;
-    if (this._calcType < 1) return [0,0];
-    if (this._calcType == 7) return [this._minDur, this._minDur];
-
-    let nextP = 0;
-    // nextPeriod will be a full period so daysMap * current minimum duration
-    this._daysMap.map(e => nextP += e ? this._minDur : 0);
-
-    const today = TimeDate.getDay();
-    // if today is start of the week then full period * current min so:
-    if (today == this.pursuit.dayOfWeek) return [nextP, nextP];
-    
-    // thisPeriod needs to account for possible past differences in required min
-    // number of past days until start of week
-    const pastDays = (today + 7 - this.pursuit.dayOfWeek) % 7;
-    let thisP = 0;
-
-    // add the required minutes for past days
-    if(!ignorePastDays){
-      const todaysIndex = this._minutes.required.length - 2;
-      for(let i = todaysIndex - pastDays; i < todaysIndex; i++){
-        thisP += this._minutes.required[i];
-      }
-    }
-
-    // add the required minutes for today and future days
-    const nonPastDays = 7 - pastDays;
-    const daysArr = this._daysMap.concat(this._daysMap);
-    daysArr.slice(today, today + nonPastDays).map(e => thisP += (e ? this._minDur : 0));
-
-    return [thisP, nextP];
+  constructor(){
+    this._pursuit = null;
+    this._streak = null;
+    this._streakBar = false;
+    this._notifyIDs = [];
+    this._reminderTime = 0;
   }
 
-  getIndex(dayAdjust){
-    const len = this._minutes.complete.length
-    // for once and anytime calc types
-    let index = 0;
-    // last index is tomorrow, 2nd last is today
-    if (this.calcType == 1) index = len - 2 + dayAdjust;
-    // 7 day (weekly)type
-    else if (this.calcType == 7){
-      const weekStart = this.pursuit.dayOfWeek;
-      const day = TimeDate.getDay();
-      // if tomorrow is the weekStart (tomorrow a new period)
-      if (dayAdjust == 1 && weekStart == (day + 1) % 7) index = len - 1;
-      // if days back to week start < days to go back to active day
-      if (dayAdjust < 0 && (day + 7 - weekStart) % 7 < dayAdjust * -1) index = len - 3;
-      // if current period
-      else index = len - 2;       
-    }
-    return index;
+  get TID(){ return this._TID; }
+  get pursuit(){ return this._pursuit; }
+  get name(){ return this._name; }
+  get calcType(){ return this._calcType; }
+  get defaultDur(){ return this._defaultDur; }
+  get daysMap(){ return this._daysMap; }
+  get totalM(){ return this._totalM; }
+  get updated(){ return this._updated; }
+  get paused(){ return this._paused; }
+  get taskOrder(){ return this._taskOrder; }
+  get minDur(){ return this._minDur; }
+  get reminders(){return this._reminders && Notify.STATUS.canSend; } 
+  get notifyIDs(){ return this._notifyIDs; }
+  get reminderTime(){ return new Date (Math.abs(this._reminderTime)); }
+  get daysMap(){ return this._daysMap}
+  get streak(){ return this._streak; }
+  get cM (){ return this._cM; }
+  get pcM (){ return this._pcM; }
+  get rM (){ 
+    if(this.hasOwnProperty('_rM') &&  this._rM.length > 0) return this._rM; 
+    else return false;
   }
+  get streakBar(){ return false; }
 
-  updateStreakBar(dataIndex, streakBarIndex){
-    const c = this._minutes.complete[dataIndex];
-    const r = (this._minutes.required[dataIndex] != null)
-              ? this._minutes.required[dataIndex] : 0;
-    const sB = (r == 0) ? 0 : Math.min(c / r, 1)
-    this._minutes.streakBar[streakBarIndex] = sB;
-  }
-
-  calcStreak(){
-        // only daily and 7-day tasks should have streaks
-        if (this._calcType < 1) return null;
-
-        const thisReq = this.minutes.required[this.minutes.required.length - 2];
-        const thisComp = this.minutes.complete[this.minutes.complete.length - 2];
-        const nextReq = this.minutes.required[this.minutes.required.length - 1];
-        const nextComp = this.minutes.complete[this.minutes.complete.length - 1]; 
-        const thisPeriod = (thisReq > 0 && thisReq - thisComp <= 0) ? 1 : 0;
-        const nextPeriod = (nextReq > 0 && nextReq - nextComp <= 0) ? 1 : 0;
-    
-        const sArr = this._minutes.streakBar.toReversed();
-        let streak = 0;
-        for(let i = 0; i < sArr.length; i++){
-          if (sArr[i] == 1) streak++;
-          else break;
-        }
-    
-        if (streak < sArr.length) return thisPeriod + nextPeriod + streak;
-        else return thisPeriod + nextPeriod + streak + this._minutes.oldStreak;
-  }
-
-  registerTime(duration, dayAdjust){
-    const oldP = this.pursuit.totalM;
-    const oldT = this._totalM;
-    const oldS = this.streak;
-
-    const index = this.getIndex(dayAdjust);
-    // used for awards
-    const restarted = this._calcType > 0 && dayAdjust == 0 
-                   && this._minutes.complete[index] == 0 && oldS == 0;
-
-    const required = this._minutes.required[index] ? this._minutes.required[index] : 0;
-    // index of the current day/week for daily/7-day tasks
-    const currentPeriodI = this._minutes.required.length - 2; 
-    // index of future period tomorrow/next week for daily/7-day tasks
-    const futurePeriodI = this._minutes.required.length - 1;
-    const tomorrow = (TimeDate.getDay()+1) % 7;
-
-    // UPDATE PURSUIT required minutes if necessary
-    const stillReqM = required - this._minutes.complete[index];
-
-    if(stillReqM > 0 && !this.paused){
-      // for 7-day, time is either registered for current or future period based on index
-      if (this._calcType == 7){
-        this.pursuit.registerTime(Math.min(stillReqM, duration), index == futurePeriodI);
-      // if daily
-      } else if (this._calcType == 1){
-        const newP = (index == futurePeriodI && tomorrow == this.pursuit.dayOfWeek)
-        this.pursuit.registerTime(Math.min(stillReqM, duration), newP);
-      }
+  set pursuit(v){
+    if(v && this.hasOwnProperty('_pursuit') && this._pursuit && this._pursuit != v){
+      this.removeFromPursuit();
+      const [complete, required] = this.getUsage(0);
+      //.(Math.max(complete - required));
+      // TODO: remove completed minutes AND remove completed from required for this period
+      v.addTask(this, this._TID);
     }
 
-    // update total minutes per period
-    this._minutes.complete[index] += duration;
-    // update total minutes for task using setter
-    this.totalM += duration;
-    // update total minutes for pursuit using setter
-    this.pursuit.totalM += duration;
-
-
-
-    // Deal with streak bar (only need to worry about past)
-
-    // if 7-day and index indicates the past week was entered
-    if (!this.paused && this.calcType == 7 && index == 0){
-      // since you can only go back 6 days it will be data from last index
-      this.updateStreakBar(index, this._minutes.streakBar.length - 1)
-      
-    // if task is daily & being registered for a past day & task is due on that day
-    } else if (!this.paused && this.calcType == 1 && dayAdjust < 0 && required != 0){
-      let nonNullCount = 0;
-      // count the number of past days the task was due
-      for(let i = index; i < currentPeriodI; i++){
-        if (this._minutes.required[i] != null) nonNullCount++;
-      }
-      // if there was 1 past day due it is the last index (length - 1), etc
-      const sbIndex = this._minutes.streakBar.length - nonNullCount;
-      this.updateStreakBar(index, sbIndex);
+    this._pursuit = v;    
+  }
+  set name(v){ 
+    this._name = v
+    M.STORAGE.set(this._TID + '.name', v); 
+  }
+  set defaultDur(v){ 
+    this._defaultDur = v;
+    M.STORAGE.set(this._TID + '.defaultDur', v); 
+  }
+  set totalM(v){ 
+    this._totalM = v;
+    M.STORAGE.set(this._TID + '.totalM', v); 
+  }
+  set rM(v){ 
+    this._rM = v;
+    M.STORAGE.set(this._TID + '.rM', JSON.stringify(v));
+  }
+  set cM(v){ 
+    this._cM = v;
+    M.STORAGE.set(this._TID + '.cM', JSON.stringify(v));
+  }
+  set pcM(v){ 
+    this._pcM = v;
+    M.STORAGE.set(this._TID + '.pcM', JSON.stringify(v));
+  }
+  set streakBar(v){
+    this.storeStreakBar(v);
+  }
+  set oldStreak(v){
+    this._oldStreak = v;
+    M.STORAGE.set(this._TID + '.oldStreak', v);
+  }
+  set updated(v){
+    this._updated = v;
+    M.STORAGE.set(this._TID + '.updated', v);
+  }
+  set notifyIDs(v){
+    this._notifyIDs = v;
+    M.STORAGE.set(this._TID + '.notifyIDs', JSON.stringify(v));
+  }
+  set reminderTime(d){
+    M.STORAGE.set(this._TID + '.reminderTime', d.valueOf());
+  }
+  set taskOrder(v){
+    this._taskOrder = v;
+    M.STORAGE.set(this._TID + '.taskOrder', v);
+  }
+  set reminders(v){
+    if (v) {
+      this.cancelNotify();
+      this.setNotify(true);
+      this._reminders = true;
+    } else {
+      this.cancelNotify();
+      this._reminders = false;
+      M.STORAGE.set(this._TID + '.reminders', v);
     }
+  }
+  set paused(v){
+    // don't reset the pause-date if it already was paused
+    if ((v != false && this._paused != false) || v == this._paused) return;
 
-    // use setter to save value to storage
-    this.minutes = this._minutes;
-    // update the single number streak indicator
-    if (!this.paused) this._streak = this.calcStreak();
+    if (v != false) this.removeIncompletePursuitMinutes(); 
+    else if (this._calcType > 0) this.restorePausedMinutes();
 
-    // deal with streak awards (only for today is fine)
-    // the model will automatically update past data for missing streaks
-    // check if hours at threshold (hours award)
-    // check if long time since last complete (back on the horse award)
-
-    // return whether gamified view is required using shouldShowReward method
-
-    return getAwardData(this._calcType, oldT, this.totalM, oldP, this.pursuit.totalM, oldS, this.streak, restarted);
+    this.storePauseState(v);
+  }  
+  set daysMap(v){
+    this.storeMap(v);
+    this.cancelNotify();
+    this.setNotify();
   }
 
-
-  getUsage(dayAdjust){
-    const index = this.getIndex(dayAdjust);
-    return [this.minutes.complete[index], this.minutes.required[index]];
+  storeMap(m){
+    this._daysMap = m;
+    const daysInt = parseInt([1].concat(m.map(e => e ? '1' : '0')).join(''), 2);
+    M.STORAGE.set(this._TID + '.daysMap', daysInt); 
+  }
+  storeMinDur(v){
+    this._minDur = v;
+    M.STORAGE.set(this._TID + '.minDur', v); 
+  }
+  storeCalcType(t){
+    this._calcType = t;
+    M.STORAGE.set(this._TID + '.calcType', t);
+  }
+  storePauseState(v){
+    this._paused = (v == false) ? 0 : TimeDate.now();
+    M.STORAGE.set(this._TID + '.paused', (v == false) ? 0 : this._paused.valueOf());
+  }
+  storeStreakBar(v){ 
+    this._streakBar = v;
+    M.STORAGE.set(this._TID + '.streakBar', JSON.stringify(v));
   }
 
-
-  // stop remove all remaining required minutes
-  // pause remove all remaining required minutes for this and 
-  // change type to any or once
-  // WHAT TO DO WHEN CHANGE TYPE BACK (just make new with old data)
-  // WHAT TO DO WHEN CHANGE BETWEEN DAILY AND WEEKLY AND VICE VERSA
-  calcIncompleteMinutesThisNextPeriod(){
-    const getDiffAtI = (i) => {
-      const r = this._minutes.required[i] ? this._minutes.required[i] : 0;
-      const c = this._minutes.complete[i] ? this._minutes.complete[i] : 0;
-      return Math.max(0, r - c);
+  print(){
+    console.log(this.name, '{');
+    for(const [k,v] of Object.entries(this)){
+      console.log('  ' + k + ':', k=='_pursuit' ? v.name : v);
     }
-
-    let nowAmount = 0;
-    let nextAmount = 0;
-    const l = this._minutes.required.length;
-
-    // Calculate for 7-day
-    if(this._calcType == 7){
-      nowAmount = getDiffAtI(l-2);
-      nextAmount = getDiffAtI(l-1);
-
-    // Calculate for Daily
-    } else if (this._calcType == 1){
-      const today = TimeDate.getDay();
-
-    // Future period (next Amount)
-      // for daily the next amount is the minDur * dayMap days minus 
-      // anything done tomorrow if tomorrow is the start of a new period
-      this.daysMap.forEach(v => nextAmount += v ? this._minDur : 0);
-      // if tomorrow is new period subtract tomorrows completed from next period
-      if ((today + 1) % 7 == this.pursuit.dayOfWeek) nextAmount -= getDiffAtI(l-1);
-  
-      
-      // number of days since the start of week to today
-      const daysAgo = (today + 7 - this.pursuit.dayOfWeek) % 7;
-      const daysRemaining = 7 - daysAgo;
-      const startIndex = l - 2;
-      const endIndex = startIndex + daysRemaining;
-      // the gap between the minutes.completed/required & daysOfWeek indices
-      const gap = (startIndex + 7 - today) % 7;
-    
-      // add up uncompleted required minutes for days remaining in the pursuit week
-      for(let i = startIndex; i < endIndex; i++){
-        // while in range use the difference between required and completed
-        if (i < l) nowAmount += getDiffAtI(i);
-        // afterwards use the days map & add minDur for days task is required
-        else nowAmount += (this.daysMap[(i - gap) % 7] ? this._minDur : 0);
-
-        console.log(daysAgo, i, i - daysAgo, (i - gap) % 7);
-      }
-    }
-    return [nowAmount, nextAmount];
+    console.log('}');
   }
 
   restorePausedMinutes(){
-    if (this._calcType < 1) return;
-
-    const [thisP, nextP] = this.calcIncompleteMinutesThisNextPeriod();
-    console.log(" PAUSED NOW, NEXT", thisP, nextP);
+    const [thisP, nextP] = this.calcIncompleteMinFromNow();
     this.pursuit.adjustReqMin(thisP, nextP);
   }
 
   removeIncompletePursuitMinutes(){
-    if (this._calcType < 1) return;
-
-    const [thisP, nextP] = this.calcIncompleteMinutesThisNextPeriod();
-    console.log("REMOVE NOW, NEXT", -1 * thisP, -1 * nextP);
+    const [thisP, nextP] = this.calcIncompleteMinFromNow();
     this.pursuit.adjustReqMin(-1 * thisP, -1 * nextP);
   }
+  calcReqMinFromNow(){
+    return [0,0];
+  }
 
-  delete(pursuitRemains = true, callback=null){
-    // remove from pursuit (storage & in-memory model)
-    if (pursuitRemains){
-      this.pursuit.deleteTask(this._TID, this);
-      this.removeIncompletePursuitMinutes();
-    } 
-    // remove from storage
-    M.STORAGE.delete(this._TID + '.minutes');
-    M.STORAGE.delete(this._TID + '.name');
-    M.STORAGE.delete(this._TID + '.calcType');
-    M.STORAGE.delete(this._TID + '.defaultDur');
-    M.STORAGE.delete(this._TID + '.minDur');
-    M.STORAGE.delete(this._TID + '.daysMap');
-    M.STORAGE.delete(this._TID + '.totalM');
-    M.STORAGE.delete(this._TID + '.paused');
-    M.STORAGE.delete(this._TID + '.taskOrder');
-    M.STORAGE.delete(this._TID + '.notifyTime');
+  removeFromPursuit(){
+    this.removeIncompletePursuitMinutes();
+    this.pursuit.deleteTask(this._TID, this);
+  }
+
+  removeFromTaskList(){
     // remove from in-memory model
     const index = Task.TASKS.indexOf(this);
     Task.TASKS.splice(index, 1);
@@ -572,93 +351,50 @@ export class Task {
     Task.TASKS.forEach((t, i) => t.taskOrder = i);
   }
 
+  delete(removeFromP=true, removeFromTL=true){
+    this.cancelNotify();
+    // remove from pursuit (storage & in-memory model)
+    if (removeFromP) this.removeFromPursuit();
 
+    // remove from storage
+    try { M.STORAGE.delete(this._TID + '.cM');} catch(e){}
+    try { M.STORAGE.delete(this._TID + '.pcM');} catch(e){}
+    try { M.STORAGE.delete(this._TID + '.rM');} catch(e){}
+    try { M.STORAGE.delete(this._TID + '.required');} catch(e){}
+    try { M.STORAGE.delete(this._TID + '.name');} catch(e){}
+    try { M.STORAGE.delete(this._TID + '.calcType');} catch(e){}
+    try { M.STORAGE.delete(this._TID + '.defaultDur');} catch(e){}
+    try { M.STORAGE.delete(this._TID + '.minDur');} catch(e){}
+    try { M.STORAGE.delete(this._TID + '.daysMap');} catch(e){}
+    try { M.STORAGE.delete(this._TID + '.totalM');} catch(e){}
+    try { M.STORAGE.delete(this._TID + '.paused');} catch(e){}
+    try { M.STORAGE.delete(this._TID + '.taskOrder');} catch(e){}
+    try { M.STORAGE.delete(this._TID + '.reminderTime');} catch(e){}
+    try { M.STORAGE.delete(this._TID + '.reminders');} catch(e){}
+    try { M.STORAGE.delete(this._TID + '.oldStreak');} catch(e){}
+    try { M.STORAGE.delete(this._TID + '.updated');} catch(e){}
+    try { M.STORAGE.delete(this._TID + '.streakBar');} catch(e){}
+    try { M.STORAGE.delete(this._TID + '.notifyIDs');} catch(e){}
 
-  anyRollOver(){
-    this.minutes = {
-      required:[this._defaultDur], 
-      complete:[0], 
-      oldStreak:0, 
-      updated:TimeDate.todayDateVal()
-    };
+    if (removeFromTL) this.removeFromTaskList();
   }
 
-  updateStreak(m, complete, required){
+  rollStreakBar(complete, required){
     // if no require minutes, it does not count toward streak
     if(required == null || required == 0) return;
 
-    if (m.streakBar[0] == 1) m.oldStreak++;
-    else m.oldStreak = 0;
+    if (this._streakBar[0] == 1) this.oldStreak++;
+    else this.oldStreak = 0;
 
-    m.streakBar.shift();
-    m.streakBar.push(Math.min(1, complete / required));
+    this._streakBar.shift();
+    this._streakBar.push(Math.min(1, complete / required));
   }
-
-  rollWeekly(periods, dateVal){
-    if (periods < 1) return;
-
-    const m = this._minutes;
-    const thisI = m.required.length - 2;
-    for(let i = 0; i < periods; i++){
-      this.updateStreak(m, m.complete[thisI], m.required[thisI]);
-      m.required.shift();
-      m.required.push(this._minDur);
-      m.complete.shift();
-      m.complete.push(0);
-    }
-    m.updated = TimeDate.getRecentDateValOfDOW(this._pursuit.dayOfWeek, dateVal);
-    console.log(m);
-    this.minutes = m;
-    this.calcStreak;
-  }
-
-  rollDaily(dCount, dateVal){
-    if(dCount < 1){
-      m.updated = dateVal;
-      this.minutes = m;
-      return;
-    }
-
-    const m = this._minutes;
-    const thisI = m.required.length - 2;
-    const dow = TimeDate.getDay();
-    for(let i = 0; i < dCount; i++){
-      this.updateStreak(m, m.complete[thisI], m.required[thisI]);
-      m.required.shift()
-      m.required.push(this._daysMap[(dow + i + 1) % 7] ? this._minDur : null)
-      m.complete.shift()
-      m.complete.push(0);
-    }
-    m.updated = dateVal;
-    this.minutes = m;
-    this.calcStreak();
-  }
-
-  checkRollOver(){
-    if (this._calcType == 0) return;
-
-    if (this._calcType == -1 && TimeDate.isMoreThanDay(this._minutes.updated))
-      return this.anyRollOver();
-
-    if (this._calcType == 1 && TimeDate.isMoreThanDay(this._minutes.updated)){
-      const [d, dVal] = TimeDate.calcDaysFromVal(this._minutes.updated, this._daysMap);
-      console.log("DAYS:", d);
-      console.log(this.minutes);
-      this.rollDaily(d, dVal);
-      console.log(this.minutes);
-    } else if (this._calcType == 7 && TimeDate.isMoreThanWeek(this._minutes.updated)){
-      const [p, dVal] = TimeDate.calcPeriodsFrom7DayRollover(this._minutes.updated);
-      if (p > 0) this.rollWeekly(p, dVal);
-    }
-  }
-
-
 
   async setNotify(force){
     if (!Notify.STATUS.canSend) return;
 
-    if (force) this.notifyTime == Math.abs(this._notifyTime);
-    else if (!this.reminders || this._notifyTime < 0) return;
+    if (force) this.reminders = true;
+    else if (!this.reminders || this._reminderTime == 0) return;
 
     const d = new Date(this.reminderTime);
     console.log(String(d));
@@ -698,5 +434,553 @@ export class Task {
 
       await Notify.cancel(id);
     }
+  }
+}
+
+
+// ----------------------------------------------------------------------------
+//  AnytimeTask Sub-class
+// ----------------------------------------------------------------------------
+
+export class AnytimeTask extends Task {
+  constructor(){
+    super();
+  }
+  initialize(){
+    this.updated = TimeDate.todayDateVal();
+    this.storeMinDur(0);
+  }
+
+  getUsage(dayAdjustInt){
+    const i = dayAdjustInt + Task.CTI;
+    if (i < 0 || i > this._cM.length) 
+      return console.alert('dayAdjustInt out of range in Task.completeForDay');
+
+    return [this._cM[i], 0, this._cM[i]];
+  }
+
+  registerTime(duration, dayAdjust){
+    // TODO
+    const restarted = false // check if there has been a lack of activity for a few days
+    const oldP = this.pursuit.totalM;
+    const oldT = this._totalM;
+
+    const cI = Task.CTI + dayAdjust;
+
+    // use setter to update the minutes complete
+    this.cM[cI] += duration;
+    // update total minutes for task using setter
+    this.totalM += duration;
+    // update total minutes for pursuit using setter
+    this.pursuit.totalM += duration;
+
+    return []//getAwardData(this._calcType, oldT, this.totalM, oldP, this.pursuit.totalM, 0, 0, restarted);
+  }
+
+  newPeriodRequiredMinutes(){
+    return 0;
+  }
+
+  checkRollOver(){
+    if (!TimeDate.isMoreThanDay(this._updated)) return;
+
+    const [dCount, dateVal] = TimeDate.calcDaysFromVal(this._updated, this._daysMap);
+
+    for(let i = 0; i < dCount; i++){
+      this._cM.shift();
+      this._cM.push(0);
+    }
+    // use setters to store
+    this.cM = this._cM;
+    this.updated = dateVal;
+  }
+}
+
+
+
+// ----------------------------------------------------------------------------
+//  OnceTask Sub-class
+// ----------------------------------------------------------------------------
+
+export class OnceTask extends Task {
+  constructor(){
+    super();
+  }
+
+  initialize(minDur){
+    this.updated = TimeDate.todayDateVal();
+    this.storeMinDur(minDur);
+  }
+
+  getUsage(dayAdjustInt){
+    const i = dayAdjustInt + Task.CTI;
+    if (i < 0 || i > this._cM.length) 
+      return console.alert('dayAdjustInt out of range in Task.completeForDay');
+
+    return [this._totalM, this._minDur, this._cM[i]];
+  }
+
+  registerTime(duration, dayAdjust){
+    // TODO
+    const restarted = false // check if there has been a lack of activity for a few days
+    const oldP = this.pursuit.totalM;
+    const oldT = this._totalM;
+
+    const cI = Task.CTI + dayAdjust;
+
+    // use setter to update the minutes complete
+    this.cM[cI] += duration;
+    // update total minutes for task using setter
+    this.totalM += duration;
+    // update total minutes for pursuit using setter
+    this.pursuit.totalM += duration;
+
+    return []//getAwardData(this._calcType, oldT, this.totalM, oldP, this.pursuit.totalM, 0, 0, restarted);
+  }
+
+  checkRollOver(){
+    if (!TimeDate.isMoreThanDay(this._updated)) return;
+
+    const [dCount, dateVal] = TimeDate.calcDaysFromVal(this._updated, this._daysMap);
+
+    for(let i = 0; i < dCount; i++){
+      this._cM.push(0);
+    }
+    // use setters to store
+    this.cM = this._cM;
+    this.updated = dateVal;
+  }
+
+  newPeriodRequiredMinutes(){
+    return 0;
+  }
+}
+
+
+
+// ----------------------------------------------------------------------------
+//  DailyTask Sub-class
+// ----------------------------------------------------------------------------
+
+export class DailyTask extends Task {
+  // this.rM's TODAY's index
+  static RTI = 6;
+
+  constructor(){
+    super();
+  }
+
+  initialize(minDur, daysMap){
+    const today = TimeDate.getDay();
+    this.streakBar = [0,0,0,0,0,0,0,0,0,0];
+    this.rM = [null,null,null,null,null,null,
+               daysMap[today] ? minDur : null,              // today
+               (daysMap[(today + 1) % 7]) ? minDur : null], // tomorrow
+    this.updated = TimeDate.todayDateVal();
+    this.oldStreak = 0;
+    this.storeMinDur(minDur);
+  }
+
+  get streak(){
+    if (this._streak == null) this._streak = this.calcStreak();
+    return this._streak;
+  }
+  get streakBar(){ 
+    const sB = this._streakBar.slice();
+    const today = this.todayIsStreak();
+    if (today) sB.push(1);
+    if ((today || !this._rM[DailyTask.RTI]) && this.tomorrowIsStreak()) sB.push(1);
+
+    return sB.slice(-8);
+  }
+  set streakBar(v){ this.storeStreakBar(v); }
+
+
+  get daysMap(){ return this._daysMap; }
+  set daysMap(v){ 
+    // calculate old requirements BEFORE saving map which it depends on
+    const [reqMin, nextReqMin] = this.calcReqMinFromNow();
+    // store old map to compare for finding changes
+    const oldMap = this._daysMap;
+    // write the changes
+    this.storeMap(v);
+
+    const today = TimeDate.getDay();
+
+    // for today and tomorrow
+    for(let i = 0; i < 2; i++){
+      const d = (today + i) % 7;
+      // if the old map did not require minutes but new map does
+      if (!oldMap[d] && v[d])
+        this._rM[DailyTask.RTI + i] = this._minDur;
+      // if old map required but new one doesn't
+      else if (oldMap[d] && !v[d])
+        this._rM[DailyTask.RTI + i] = 0;
+    }
+
+    // use setter to write minutes to storage
+    this.rM = this._rM;
+    // after saving the minutes calculate the new time requirements
+    const [newReqMin, newNextReqMin] = this.calcReqMinFromNow();
+    // adjust pursuit required minutes remaining
+    this.pursuit.adjustReqMin(newReqMin - reqMin, newNextReqMin - nextReqMin);
+    // cancel any notifications and set for proper days (if reminders on)
+    this.cancelNotify();
+    this.setNotify();
+  }
+
+  get minDur(){ return this._minDur; }
+
+  set minDur(v){ 
+    const [reqMin, nextReqMin] = this.calcReqMinFromNow();
+    this.storeMinDur(v);
+
+    // update the required values today and tomorrow indices
+    if (this._rM[DailyTask.RTI] != null) this._rM[DailyTask.RTI] = v;
+    if (this._rM[DailyTask.RTI + 1] != null) this._rM[DailyTask.RTI + 1] = v;
+    // use setter to update storage
+    this.rM = this._rM;
+
+    const [newReqMin, newNextReqMin] = this.calcReqMinFromNow();
+    // adjust pursuit required minutes remaining
+    this.pursuit.adjustReqMin(newReqMin - reqMin, newNextReqMin - nextReqMin);
+  }
+
+  getUsage(dayAdjustInt){
+    // complete this period, required this period, complete today
+    return [
+      this._cM[dayAdjustInt + Task.CTI], 
+      this._rM[dayAdjustInt + DailyTask.RTI], 
+      this._cM[dayAdjustInt + Task.CTI]
+    ];
+  }
+
+  // calculate total required minutes REMAINING for this period & for next period
+  calcReqMinFromNow(){
+    const nextP = this.newPeriodRequiredMinutes();
+
+    const today = TimeDate.getDay();
+    // if today is start of the week then full period * current min so:
+    if (today == this.pursuit.dayOfWeek) return [nextP, nextP];
+    
+    // number of days remaining in week
+    const rDays = (this.pursuit.dayOfWeek + 7 - TimeDate.getDay()) % 7;
+    const end = today + rDays;
+    let thisP = 0;
+
+    // put two copies of _daysMap head to tail to use as a mask
+    const daysArr = this._daysMap.concat(this._daysMap);
+    // iterate over subsection starting today for remaining days using as mask
+    for(let i = today; i < end; i++){
+      if (daysArr[i]) thisP += this._minDur; 
+    }
+
+    return [thisP, nextP];
+  }
+
+  calcIncompleteMinFromNow(){
+    // get the remaining required minutes
+    let [_, nextP] = this.calcReqMinFromNow();
+    const today = TimeDate.getDay();
+
+    // if a new period starts tomorrow then subtract any completed minutes
+    if ((today + 1) % 7 == this.pursuit.dayOfWeek) 
+      nextP -= Math.max(0, this._rM[DailyTask.RTI] - this._cM[Task.CTI + 1]);
+    
+    const daysRemaining = (this.pursuit.dayOfWeek + 7 - TimeDate.getDay()) % 7;
+    const endIndex = Task.CTI + daysRemaining;
+    // the gap between the minutes.completed / required & daysOfWeek indices
+    const gap = (Task.CTI + 7 - today) % 7;
+    let thisP = 0;
+  
+    // add up uncompleted required minutes for days remaining in the pursuit week
+    for(let i = Task.CTI; i < endIndex; i++){
+      // while in range use the difference between required and completed
+      if (i < this._cM.length) thisP += Math.max(0, this._rM[i] - this._cM[i]); 
+      // afterwards use the days map & add minDur for days task is required
+      else thisP += (this.daysMap[(i - gap) % 7] ? this._minDur : 0);
+    }
+
+    return [thisP, nextP];
+  }
+
+  todayIsStreak(){
+    if (this._rM[DailyTask.RTI] && this._cM[Task.CTI] >= this._rM[DailyTask.RTI]) return 1;
+    else return 0;
+  }
+
+  tomorrowIsStreak(){
+    if (this._rM[DailyTask.RTI+1] && this._cM[Task.CTI+1] >= this._rM[DailyTask.RTI+1]) return 1;
+    else return 0;
+  }
+
+  calcStreak(){
+    const today = this.todayIsStreak();
+    const tomorrow = today || !this._rM[DailyTask.RTI] ? this.tomorrowIsStreak() : 0;
+
+    let s = 0;
+    const sArr = this._streakBar.toReversed();
+    for(let i = 0; i < sArr.length; i++){
+      if (sArr[i] == 1) s++;
+      else break;
+    }
+  
+    // if the streak bar is all full include oldStreak
+    if (s == sArr.length) return tomorrow + today + s + this._oldStreak;
+    else return tomorrow + today + s;
+  }
+
+  newPeriodRequiredMinutes(){
+    let reqMin = 0;
+    this._daysMap.forEach(d => { 
+      if (d) reqMin += this._minDur; 
+    });
+    return reqMin;
+  }
+
+  registerTime(duration, dayAdjust){
+    let awards = [];
+
+    const restarted = false // check if there has been a lack of activity for a few days
+    const oldP = this.pursuit.totalM;
+    const oldT = this._totalM;
+    const oldS = this.streak;
+    const rI = DailyTask.RTI + dayAdjust;
+    const cI = Task.CTI + dayAdjust;
+    const required = this._rM[rI] ? this._rM[rI] : 0;
+
+    // update pursuit required minutes if necessary
+    const stillReqM = required - this._cM[cI];
+    if (stillReqM > 0 && !this.paused)
+        awards.concat(this.pursuit.registerTime(Math.min(stillReqM, duration), dayAdjust));
+
+    // use setter to update the minutes complete
+    this._cM[cI] += duration;
+    this.cM = this._cM;
+    // update total minutes for task using setter
+    this.totalM += duration;
+
+    // Deal with streak bar (only need to worry about past)
+    if (!this.paused && dayAdjust < 0 && required != 0){
+      let nonZeroCount = 0;
+      // count the number of past days the task was due
+      for(let i = rI; i < DailyTask.RTI; i++){
+        if (this._rM[i] != null) nonZeroCount++;
+      }
+      // if there was 1 past day due it is the last index (length - 1), etc
+      const sbIndex = this._streakBar.length - nonZeroCount;
+      this._streakBar[sbIndex] = Math.min(this.cM[cI] / required, 1);
+      // use setter to store;
+      this.streakBar = this._streakBar;
+    }
+
+    // update the single number streak indicator
+    if (!this.paused) this._streak = this.calcStreak();
+
+    // return any awards
+    return getAwardData(this._calcType, oldT, this.totalM, oldS, this.streak);
+  }
+
+  checkRollOver(){
+    console.log("DailyTask[", this.name, "].checkRollOver()");
+    console.log(this.cM);
+    if (!TimeDate.isMoreThanDay(this._updated) || this.paused) return;
+
+    const [dCount, dateVal] = TimeDate.calcDaysFromVal(this._updated, this._daysMap);
+    const dow = (new Date(dateVal)).getDay();
+
+    for(let i = 0; i < dCount; i++){
+      this.rollStreakBar(this._cM[DailyTask.RTI], this._rM[DailyTask.RTI]);
+      this._rM.shift();
+      this._rM.push(this._daysMap[(dow + i + 1) % 7] ? this._minDur : null);
+      this._cM.shift();
+      this._cM.push(0);
+    }
+    // use setters to store
+    this.cM = this._cM;
+    this.rM = this._rM;
+    this.updated = dateVal;
+
+    // update the single number streak indicator
+    this._streak = this.calcStreak();
+    console.log(this.cM);
+    console.log("streak:", this.streak);
+  }
+}
+
+
+
+// ----------------------------------------------------------------------------
+//  WeeklyTask Sub-class
+// ----------------------------------------------------------------------------
+
+
+
+export class WeeklyTask extends Task {
+  // this.rM's current period's index
+  static RTI = 1;
+  constructor(){
+    super();
+  }
+
+  initialize(minDur, _, dayOfWeek, thisWeekReq=null){
+    this.oldStreak = 0;
+    this.streakBar = [0,0,0,0,0,0,0,0,0,0];
+    this.rM = [0, thisWeekReq == null ? minDur : thisWeekReq, minDur];
+    this.pcM = [0,0,0];
+    this.updated = TimeDate.getRecentDateValOfDOW(dayOfWeek);
+    this.storeMinDur(minDur);
+  }
+
+  get streak(){
+    if (this._streak == null) this._streak = this.calcStreak();
+    return this._streak;
+  }
+  get streakBar(){ 
+    const sB = this._streakBar.slice();
+    // if the past period was required append a value for past period
+    if (this._rM[WeeklyTask.RTI - 1]) 
+      sB.push(Math.min(1, this._pcM[WeeklyTask.RTI - 1] / this._rM[WeeklyTask.RTI - 1]));
+    const thisP = this.thisPerIsStreak();
+    // if this period is already finished append a 1 for this period
+    if (thisP) sB.push(1);
+    // if this period  is complete (or not required) & next period is complete
+    if ((thisP || !this._rM[WeeklyTask.RTI]) && this.nexPerIsStreak()) sB.push(1);
+    return sB.slice(-6);
+  }
+  set streakBar(v){ this.storeStreakBar(v); }
+
+  get minDur(){ return this._minDur; }
+  set minDur(v){
+    // cache old values for this and next period
+    const oldMD = this._rM[WeeklyTask.RTI];
+    const oldMDNext = this._rM[WeeklyTask.RTI + 1];
+    // update the values
+    this._rM[WeeklyTask.RTI] = v;
+    this._rM[WeeklyTask.RTI + 1] = v;
+    // use setter to write to disk
+    this.rM = this._rM;
+    // update the pursuit minutes
+    this.pursuit.adjustReqMin(v - oldMD, v - oldMDNext);
+  }
+
+
+  getUsage(dayAdjustInt){
+    const p = TimeDate.dayAdjustToPeriodAdjust(dayAdjustInt, this.pursuit.dayOfWeek);
+    const rI = p + WeeklyTask.RTI;
+    const cI = p + Task.CTI;
+
+    // complete this period, required this period, complete today
+    return [this._pcM[rI], this._rM[rI], this._cM[cI]];
+  }
+
+  newPeriodRequiredMinutes(){
+    return this.minDur;
+  }
+
+  thisPerIsStreak(){
+    if (this._rM[WeeklyTask.RTI] && this._pcM[WeeklyTask.RTI] >= this._rM[WeeklyTask.RTI])
+      return 1;
+    else return 0;
+  }
+
+  nexPerIsStreak(){
+    if (this._rM[WeeklyTask.RTI+1] && this._pcM[WeeklyTask.RTI+1] >= this._minDur) return 1;
+    else return 0;
+  }
+
+  calcStreak(){
+    let s = 0;
+    const sArr = this.streakBar.toReversed();
+    for(let i = 0; i < sArr.length; i++){
+      if (sArr[i] == 1) s++;
+      else break;
+    }
+    // if the streak bar is all full include oldStreak
+    return (s == sArr.length) ? s + this._oldStreak : s;
+  }
+
+
+  registerTime(duration, dayAdjust){
+    // TODO
+    const restarted = false // check if there has been a lack of activity for a few days
+    const oldP = this.pursuit.totalM;
+    const oldT = this._totalM;
+    const oldS = this.streak;
+    const pI = WeeklyTask.RTI + TimeDate.dayAdjustToPeriodAdjust(dayAdjust, this.pursuit.dayOfWeek);
+    const cI = Task.CTI + dayAdjust;
+    const required = this._rM[pI] ? this._rM[pI] : 0;
+
+    // update total minutes for task using setter
+    this.totalM += duration;
+    // update total minutes for pursuit using setter
+    this.pursuit.totalM += duration;
+
+    // UPDATE PURSUIT required minutes if necessary
+    const stillReqM = required - this._pcM[pI];
+    if(stillReqM > 0 && !this.paused)
+        this.pursuit.registerTime(Math.min(stillReqM, duration), dayAdjust);
+
+    // use setter to update the minutes complete in the period
+    this._pcM[pI] += duration;
+    this.pcM = this._pcM;
+    // use setter to update the minutes complete for day (cM)
+    this._cM[cI] += duration;
+    this.cM = this._cM;
+    
+    // // if not paused AND past period AND required for that period was > 0
+    // if (!this.paused && pI == -1 && this._rM[pI] > 0){
+    //   this._streakBar[this._streakBar.length - 1] = Math.min(1, this._pcM[0] / this._rM[0]);
+    //   // use setter to store
+    //   this.streakBar = this._streakBar;
+    // }
+
+    // update the single number streak indicator
+    if (!this.paused) this._streak = this.calcStreak();
+    // return any awards
+    return []; // getAwardData(this._calcType, oldT, this.totalM, oldP, this.pursuit.totalM, oldS, this.streak, restarted);
+  }
+
+  calcReqMinFromNow(){
+    return [this._rM[WeeklyTask.RTI], this._minDur];
+  }
+
+  calcIncompleteMinFromNow(){
+    return [
+      Math.max(0, this._rM[WeeklyTask.RTI] - this._pcM[WeeklyTask.RTI]),
+      Math.max(0, this._rM[WeeklyTask.RTI+1] - this._pcM[WeeklyTask.RTI+1]),
+    ]
+  }
+
+
+  checkRollOver(){
+    console.log("WeeklyTask[", this.name, "].checkRollOver()", String(new Date(this._updated)));
+    console.log(this.pcM);
+    console.log(this.rM);
+    console.log("-------------");
+    
+
+    if (!TimeDate.isMoreThanWeek(this._updated)) return;
+
+    const [periods, dateVal] = TimeDate.calcPeriodsFrom7DayRollover(this._updated);
+    console.log("PERIODS:", periods);
+    for(let i = 0; i < periods; i++){
+      this.rollStreakBar(this._pcM[WeeklyTask.RTI - 1], this._rM[WeeklyTask.RTI - 1]);
+      this._rM.shift();
+      this._rM.push(this._minDur);
+      this._cM.shift();
+      this._cM.push(0);
+      this._pcM.shift();
+      this._pcM.push(0);
+    }
+    // use setters to store
+    this.updated = TimeDate.getRecentDateValOfDOW(this._pursuit.dayOfWeek, dateVal);
+    this.cM = this._cM;
+    this.rM = this._rM;
+    this.pcM = this._pcM
+    // refresh the stored numerical streak value
+    this.calcStreak();
+
+    console.log(this.pcM);
   }
 }

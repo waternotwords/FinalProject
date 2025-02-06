@@ -27,16 +27,40 @@ export const ColorContext = (p) => {
 export const UI = {
   colors: [
     {
+      dark: '#3f564f',
+      medium: '#5f8076',
+      light: '#7eab9d',
+      contrast: '#d4fcf0',
+    },
+    {
       dark: '#042164',
       medium: '#054b8f',
       light: '#527bb5',
       contrast: '#9ad1ff',
+    },    
+    {
+      dark: '#483f6a',
+      medium: '#655894',
+      light: '#8271bf',
+      contrast: '#cbbdfc',
     },
     {
       dark: '#473039',
       medium: '#b06484',
       light: '#c785a0',
       contrast: '#f5bfd4',
+    },
+    {
+      dark: '#3f2222',
+      medium: '#944f4f',
+      light: '#bf6565',
+      contrast: '#ffc9c9',
+    },
+    {
+      dark: '#5e3506',
+      medium: '#b3650b',
+      light: '#de9c50',
+      contrast: '#f7c58b',
     },
     {
       dark: '#706531',
@@ -49,30 +73,6 @@ export const UI = {
       medium: '#405c22',
       light: '#5d8731',
       contrast: '#bbf57d',
-    },
-    {
-      dark: '#3f2222',
-      medium: '#944f4f',
-      light: '#bf6565',
-      contrast: '#ffc9c9',
-    },
-    {
-      dark: '#483f6a',
-      medium: '#655894',
-      light: '#8271bf',
-      contrast: '#cbbdfc',
-    },
-    {
-      dark: '#5e3506',
-      medium: '#b3650b',
-      light: '#de9c50',
-      contrast: '#f7c58b',
-    },
-    {
-      dark: '#3f564f',
-      medium: '#5f8076',
-      light: '#7eab9d',
-      contrast: '#d4fcf0',
     },
     {
       dark: '#333333',

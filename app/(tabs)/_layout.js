@@ -1,7 +1,7 @@
 
 import { useContext, useState } from 'react';
-import { Tabs, Link, router } from 'expo-router';
-import { View, Button, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { Tabs, router } from 'expo-router';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { MODEL } from '../../model/globalContext.js';
 import { COLOR } from '../../model/ui.js';
 import { TimeDate } from '../../model/time.js';
@@ -23,11 +23,12 @@ export default function TabLayout() {
     setUpdate(update + 1);
   }
   const grey = c.grey;
+  console.log((TimeDate.now().getMonth() + 1) + '/' + TimeDate.now().getDate())
 
   const IndexPrevButton = () => (
     <TouchableOpacity style={s.leftButt} onPress={()=>{
       // the index page should go to yesterday if in future
-      if (TimeDate.DAY == 1) TimeDate.prevDay;
+      if (TimeDate.DAY == 1) TimeDate.prevDay();
 
       TimeDate.prevDay();
       refresh();
@@ -95,12 +96,13 @@ export default function TabLayout() {
 
   const TimeTravelForward = (p) => (
     <TouchableOpacity style={s.leftButt} onPress={()=>{
-      TimeDate.futureDays++;
+      TimeDate.nextTestDay();
+      model.rollAll();
       model.refresh();
     }}>
       <Text style={[s.txt]}>
         {(()=>{
-          const d = new Date(Date.now() + (TimeDate.futureDays + 1) * TimeDate.secsPerDay());
+          const d = TimeDate.now();
           const m = TimeDate.months[d.getMonth()];
           const dom = d.getDate();
           return m + ' ' + dom;
@@ -110,20 +112,30 @@ export default function TabLayout() {
     </TouchableOpacity>
   );
 
-  const TimeTravelBack = () => (
+  // const TimeTravelBack = () => (
+  //   <TouchableOpacity style={s.leftButt} onPress={()=>{
+  //     TimeDate.prevTestDay();
+  //     model.refresh();
+  //   }}>
+  //     <Ionicons name='chevron-back-sharp' size={35} color="white" />
+  //     <Text style={[s.txt]}>
+  //       {(()=>{
+  //         const d = new Date(TimeDate.nowVal() + (TimeDate.futureDays - 1) * TimeDate.msPerDay());
+  //         const m = TimeDate.months[d.getMonth()];
+  //         const dom = d.getDate();
+  //         return m + ' ' + dom;
+  //       })()}
+  //     </Text>
+  //   </TouchableOpacity>
+  // );
+
+  const WipeAll = () => (
     <TouchableOpacity style={s.leftButt} onPress={()=>{
-      TimeDate.futureDays--;
+      model.wipeAll();
+      TimeDate.futureDays = 0;
       model.refresh();
     }}>
-      <Ionicons name='chevron-back-sharp' size={35} color="white" />
-      <Text style={[s.txt]}>
-        {(()=>{
-          const d = new Date(Date.now() + (TimeDate.futureDays - 1) * TimeDate.secsPerDay());
-          const m = TimeDate.months[d.getMonth()];
-          const dom = d.getDate();
-          return m + ' ' + dom;
-        })()}
-      </Text>
+      <Text style={[s.txt]}> ! Wipe Model !</Text>
     </TouchableOpacity>
   );
 
@@ -141,7 +153,7 @@ export default function TabLayout() {
         name="index"
         initialParams={{route:'index'}}
         options={{
-          headerTitle: 'Task List' ,  // TimeDate.dayText(TimeDate.DAY), 
+          headerTitle: TimeDate.months[TimeDate.now().getMonth()] + '/' + TimeDate.now().getDate(), //TimeDate.dayText(TimeDate.DAY), // 'Task List' ,  
           headerTitleStyle: {color:'white', fontSize:20},
           tabBarShowLabel: false,
           headerBackground: ()=><View style={{backgroundColor:'#2C2C2C', flex:1}}/>,
@@ -190,17 +202,16 @@ export default function TabLayout() {
           headerTitleStyle:{color:'white', fontSize:20},
           headerBackground: ()=><View style={{backgroundColor:'#2C2C2C', flex:1}}/>,
           headerRight: ()=><TimeTravelForward />,
-          headerLeft: ()=><TimeTravelBack />,          
+          headerLeft: ()=><WipeAll />,          
+          // headerLeft: ()=>model.wipeAll(),          
           tabBarShowLabel: false,
           tabBarIcon: ({ color }) => <FontAwesome6 size={38} name="gear" color={color} />,
           tabBarActiveTintColor: '#EEE', 
         }}
       />
-
     </Tabs>
   );
 }
-
 
 
 const s = StyleSheet.create({
