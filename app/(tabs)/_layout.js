@@ -5,6 +5,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { MODEL } from '../../model/globalContext.js';
 import { COLOR } from '../../model/ui.js';
 import { TimeDate } from '../../model/time.js';
+import { Notify } from '../../model/notifications.js';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import Octicons from '@expo/vector-icons/Octicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -134,6 +135,7 @@ export default function TabLayout() {
       model.wipeAll();
       TimeDate.futureDays = 0;
       model.refresh();
+      Notify.cancelAll();
     }}>
       <Text style={[s.txt]}> ! Wipe Model !</Text>
     </TouchableOpacity>

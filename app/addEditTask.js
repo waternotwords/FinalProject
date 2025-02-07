@@ -155,11 +155,16 @@ export default function AddTask(){
           <View style={s.switchContain}>
             <SimpleSwitch
               isOn={tData.reminders} 
-              onChange={async (isOn, revert)=>{              
-                const s = await Notify.switch(false, ()=>{
-                  if (isOn) revert(); 
-                });
-                setTData({...tData, reminders: s});
+              onChange={ async wasOn => {
+                if(wasOn){
+                  setTData({...tData, reminders: false});
+                } else {
+                  if(await Notify.switch(false, ()=>setTData({...tData, reminders: false}))){
+                    setTData({...tData, reminders: true});
+                  } else {
+                    setTData({...tData, reminders: false});
+                  }    
+                }
               }}
             />
           </View>
@@ -199,6 +204,7 @@ export default function AddTask(){
         mode='time'
         date={tData.reminderTime}
         onConfirm={(d)=>{
+          console.log("DATEPICKER", String(d));
           setShowPicker(false);
           setTData({...tData, reminderTime: d});
         }}
@@ -313,8 +319,7 @@ const editTask = (task, tData, params) => {
   if (tData.name.length < 1) return missingName();
   if (tData.pursuit == null) return missingPursuit();
 
-  console.log(tData);
-  task.print();
+  console.log("addEditTask.editTask", String(tData.reminderTime));
 
   // check if data has not changed just go back
   if(!changesHaveBeenMade(task, tData)){ 
@@ -323,7 +328,6 @@ const editTask = (task, tData, params) => {
     return
   // otherwise refresh is needed
   } 
-
   Task.Edit(
     task,
     tData.name,
@@ -351,8 +355,8 @@ const changesHaveBeenMade = (task, tData)=>{
     task.calcType == tData.calcType &&
     Task.DaysMapChanged(task.daysMap, tData.daysMap) &&
     task.defaultDur == tData.defaultDur &&
-    task.reminders == tData.reminders &&
     task.reminderTime.valueOf() == tData.reminderTime.valueOf() &&
+    task.reminders == tData.reminders &&
     (task.minDur == tData.minDur || tData.calcType == TimeDate.calcPeriod[3]))
   return false;
 

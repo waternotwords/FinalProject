@@ -1,18 +1,36 @@
 import { useState } from 'react';
 import { Text, Pressable, StyleSheet, View, Keyboard } from 'react-native';
 
+// export const SimpleSwitch = (p) => {
+//   const [state, setState] = useState(p?.isOn);
+//   const onC = p?.color ? p.color : '#5f8735';
+
+//   return (
+//     <Pressable 
+//       style={[s.container, state ? {...s.on, backgroundColor: onC} : s.off ]} 
+//       onPressIn={()=>{
+//         Keyboard.dismiss();
+//         const newState = !state
+//         setState(newState)
+//         p?.onChange?.(newState, ()=>setState(false));
+//       }}
+//     >
+//       <View style={[s.switch]}>
+//         <Text style={s.txt}> </Text>
+//       </View>
+//     </Pressable>
+//   )
+// }
+
 export const SimpleSwitch = (p) => {
-  const [state, setState] = useState(p?.isOn == true);
   const onC = p?.color ? p.color : '#5f8735';
 
   return (
     <Pressable 
-      style={[s.container, state ? {backgroundColor: onC, alignItems: 'flex-end',} : s.off, ]} 
+      style={[s.container, p?.isOn ? {...s.on, backgroundColor: onC} : s.off ]} 
       onPressIn={()=>{
         Keyboard.dismiss();
-        const newState = !state
-        setState(newState)
-        p?.onChange?.(newState, ()=>setState(false));
+        p?.onChange?.(p?.isOn);
       }}
     >
       <View style={[s.switch]}>
@@ -32,7 +50,10 @@ const s = StyleSheet.create({
     padding: 1,
   },
   off: {
-    alignItems: 'start',
+    alignItems: 'flex-start',
+  },
+  on: {
+    alignItems: 'flex-end', 
   },
   switch: {
     borderWidth: 1,

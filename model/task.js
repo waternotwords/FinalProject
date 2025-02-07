@@ -43,8 +43,9 @@ export class Task {
     t.totalM = 0; 
     t.taskOrder = (Task.TASKS.length);
     t.notifyIDs = [];
-    t.reminders = reminders;
+    // setting reminderTime should be before setting reminders with setter
     t.reminderTime = reminderTime;
+    t.reminders = reminders;
     t.cM = [0,0,0,0,0,0,0,0];
 
     // the setters for these valuess recalculate stuff so just store
@@ -61,8 +62,8 @@ export class Task {
     }
 
     if (t.reminders) t.setNotify();
-    console.log("MAKE NEW");
-    t.print();
+    // console.log("MAKE NEW");
+    // t.print();
     return t;
   }
 
@@ -75,36 +76,40 @@ export class Task {
 
   static Edit(task, name, pursuit, daysMap, defaultDur, reminderTime, reminders, minDur, calcType){    
     task.pursuit = pursuit;
+    // TODO
+    // change task type
 
-    if (task.calcType != calcType){
-      const time = task.totalM;
-      const tIndex = Task.TASKS.indexOf(task);
-      const pIndex = pursuit.tasks.indexOf(task);
-      task.delete();
-      const t = Task.MakeNew(pursuit, name, calcType, minDur, defaultDur, daysMap, reminderTime, reminders, null, task._TID);
-
-      // add back the time and the notifications
-      t.totalM = time;
-      t.TID = task._TID;
-      // add the task at the appropriate indices
-      Task.TASKS.splice(tIndex, 0, t);
-      t._taskOrder = tIndex;
-      pursuit.tasks.splice(tIndex, 0, t);
-      t.print();
-      console.log("#############");
-      for (const ta of Task.TASKS) console.log(ta.name, ta.calcType);
-      for (const pt of t.pursuit.tasks) console.log(pt.name, pt.calcType);
-      for (const id of t.pursuit.taskIDs) console.log(id);
-      return t;
-    }
+    
+    // if (task.calcType != calcType){
+    //   const time = task.totalM;
+    //   const tIndex = Task.TASKS.indexOf(task);
+    //   // const pIndex = pursuit.tasks.indexOf(task);
+    //   task.delete();
+    //   // add back the time and the notifications
+    //   t.totalM = time;
+    //   t.TID = task._TID;
+    //   // add the task at the appropriate indices
+    //   Task.TASKS.splice(tIndex, 0, t);
+    //   t._taskOrder = tIndex;
+    //   pursuit.tasks.splice(tIndex, 0, t);
+    //   t.print();
+    //   console.log("#############");
+    //   for (const ta of Task.TASKS) console.log(ta.name, ta.calcType);
+    //   for (const pt of t.pursuit.tasks) console.log(pt.name, pt.calcType);
+    //   for (const id of t.pursuit.taskIDs) console.log(id);
+    //   return t;
+    // }
     
     task.name = name;
     task.daysMap = daysMap;
     task.defaultDur = defaultDur;
     task.minDur = minDur;
-    task.reminderTime = reminderTime;
+    task._reminderTime = reminderTime;
     task.reminders = reminders;
-    
+    if (task.reminders) task.setNotify();
+    console.log("EDIT: reminders, reminderTime");
+    console.log(String(reminderTime), String(task.reminderTime));
+      
 
     return task;
   }
@@ -210,6 +215,7 @@ export class Task {
     if(this.hasOwnProperty('_rM') &&  this._rM.length > 0) return this._rM; 
     else return false;
   }
+  // overridden in subclasses with streak bars
   get streakBar(){ return false; }
 
   set pursuit(v){
@@ -220,7 +226,6 @@ export class Task {
       // TODO: remove completed minutes AND remove completed from required for this period
       v.addTask(this, this._TID);
     }
-
     this._pursuit = v;    
   }
   set name(v){ 
@@ -270,16 +275,11 @@ export class Task {
     M.STORAGE.set(this._TID + '.taskOrder', v);
   }
   set reminders(v){
-    if (v) {
-      this.cancelNotify();
-      this.setNotify(true);
-      this._reminders = true;
-    } else {
-      this.cancelNotify();
-      this._reminders = false;
-      M.STORAGE.set(this._TID + '.reminders', v);
-    }
+    if (v) this._reminders = true;
+    else this._reminders = false;
+    M.STORAGE.set(this._TID + '.reminders', v);
   }
+
   set paused(v){
     // don't reset the pause-date if it already was paused
     if ((v != false && this._paused != false) || v == this._paused) return;
@@ -291,8 +291,6 @@ export class Task {
   }  
   set daysMap(v){
     this.storeMap(v);
-    this.cancelNotify();
-    this.setNotify();
   }
 
   storeMap(m){
@@ -390,11 +388,10 @@ export class Task {
     this._streakBar.push(Math.min(1, complete / required));
   }
 
-  async setNotify(force){
+  async setNotify(){
+    await this.cancelNotify();
+    if (!this.reminders || this._reminderTime == 0) return;
     if (!Notify.STATUS.canSend) return;
-
-    if (force) this.reminders = true;
-    else if (!this.reminders || this._reminderTime == 0) return;
 
     const d = new Date(this.reminderTime);
     console.log(String(d));
@@ -419,9 +416,9 @@ export class Task {
           repeats: true
         }
       }
+      console.log("setNotify CAlled", mObj.trigger);
 
       const id = await Notify.send(mObj);
-      console.log(id, '\n', mObj);
       ids.push(id);
       await (()=>new Promise(empty=>setTimeout(empty, 500)))();
     }
@@ -430,10 +427,11 @@ export class Task {
 
   async cancelNotify(){
     for(const id of this._notifyIDs){
+      // console.log("NOTIFICATION cancelled");
       if(id == 0) continue;
-
       await Notify.cancel(id);
     }
+    this.notifyIDs = [];
   }
 }
 
@@ -624,9 +622,6 @@ export class DailyTask extends Task {
     const [newReqMin, newNextReqMin] = this.calcReqMinFromNow();
     // adjust pursuit required minutes remaining
     this.pursuit.adjustReqMin(newReqMin - reqMin, newNextReqMin - nextReqMin);
-    // cancel any notifications and set for proper days (if reminders on)
-    this.cancelNotify();
-    this.setNotify();
   }
 
   get minDur(){ return this._minDur; }
@@ -782,8 +777,8 @@ export class DailyTask extends Task {
   }
 
   checkRollOver(){
-    console.log("DailyTask[", this.name, "].checkRollOver()");
-    console.log(this.cM);
+    // console.log("DailyTask[", this.name, "].checkRollOver()");
+    // console.log(this.cM);
     if (!TimeDate.isMoreThanDay(this._updated) || this.paused) return;
 
     const [dCount, dateVal] = TimeDate.calcDaysFromVal(this._updated, this._daysMap);
@@ -803,8 +798,8 @@ export class DailyTask extends Task {
 
     // update the single number streak indicator
     this._streak = this.calcStreak();
-    console.log(this.cM);
-    console.log("streak:", this.streak);
+    // console.log(this.cM);
+    // console.log("streak:", this.streak);
   }
 }
 
@@ -927,13 +922,6 @@ export class WeeklyTask extends Task {
     // use setter to update the minutes complete for day (cM)
     this._cM[cI] += duration;
     this.cM = this._cM;
-    
-    // // if not paused AND past period AND required for that period was > 0
-    // if (!this.paused && pI == -1 && this._rM[pI] > 0){
-    //   this._streakBar[this._streakBar.length - 1] = Math.min(1, this._pcM[0] / this._rM[0]);
-    //   // use setter to store
-    //   this.streakBar = this._streakBar;
-    // }
 
     // update the single number streak indicator
     if (!this.paused) this._streak = this.calcStreak();
@@ -954,16 +942,16 @@ export class WeeklyTask extends Task {
 
 
   checkRollOver(){
-    console.log("WeeklyTask[", this.name, "].checkRollOver()", String(new Date(this._updated)));
-    console.log(this.pcM);
-    console.log(this.rM);
-    console.log("-------------");
+    // console.log("WeeklyTask[", this.name, "].checkRollOver()", String(new Date(this._updated)));
+    // console.log(this.pcM);
+    // console.log(this.rM);
+    // console.log("-------------");
     
 
     if (!TimeDate.isMoreThanWeek(this._updated)) return;
 
     const [periods, dateVal] = TimeDate.calcPeriodsFrom7DayRollover(this._updated);
-    console.log("PERIODS:", periods);
+    // console.log("PERIODS:", periods);
     for(let i = 0; i < periods; i++){
       this.rollStreakBar(this._pcM[WeeklyTask.RTI - 1], this._rM[WeeklyTask.RTI - 1]);
       this._rM.shift();
@@ -981,6 +969,6 @@ export class WeeklyTask extends Task {
     // refresh the stored numerical streak value
     this.calcStreak();
 
-    console.log(this.pcM);
+    // console.log(this.pcM);
   }
 }

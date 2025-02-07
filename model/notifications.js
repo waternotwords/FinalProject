@@ -61,8 +61,12 @@ export class Notify {
   }
 
   static async cancel(id){
-    if (!!id) return;
+    if (!id) return;
     await Notifications.cancelScheduledNotificationAsync(id);
+  }
+
+  static cancelAll(){
+    Notifications.cancelAllScheduledNotificationsAsync();
   }
 
   static askPermission = (askMess, callBack) => {

@@ -223,7 +223,7 @@ export class Pursuit {
     this._rM[Pursuit.RTI + 1] += next; 
     // use setter to write to storage
     this.rM = this._rM;
-    console.log("THIS", now, "NEXT", next, '\n', this.rM);
+    // console.log("THIS", now, "NEXT", next, '\n', this.rM);
   }
 
   addTask(task, id){

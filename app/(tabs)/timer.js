@@ -23,6 +23,7 @@ import { Notify } from '../../model/notifications.js';
 import * as Notifications from "expo-notifications";
 
 const M = Storage();
+const initTimed = { startTime: 0, elapsed: 0, playing: false };
 
 
 Notifications.setNotificationHandler({
@@ -59,78 +60,66 @@ export default function Tab(){
 
   }, [rewards.length])
 
-
   const [dropState, setDropState] = useState({p: null, t: null, i: null});
   const [target, setTarget] = useState(20);
   const [notify, setNotify] = useState(false);
-  const [time, setTime] = useState({
-    startTime: 0, elapsed: 0, playing: false
-  })
-
-  const taskChange = (t) => {
-    color.setTimeColByI(t.pursuit.colorScheme);
-    const d = {p: t.pursuit, t: t, i: t.pursuit.tasks.indexOf(t)};
-    console.log("TASK CHANGE:", d.p.name, d.t.name, d.i, t.pursuit.tasks.indexOf(t));
-    setDropState(d);
-    setTarget(t.defaultDur);
-    cacheState(d, target, time);
+  const [notifyID, setNotifyID] = useState(false);
+  const [timed, setTimed] = useState(initTimed);
+  const setters = {
+    setDropState:setDropState, 
+    setTarget:setTarget, 
+    setTimed:setTimed, 
+    setNotify:setNotify, 
+    setNotifyID:setNotifyID
   }
-
-  const pChange = (p) => {
-    color.setTimeColByI(p.colorScheme);
-    const d = {p: p, t: null, i: null};
-    setDropState(d);
-    setTarget(20);
-    cacheState(d, target, time);
-  }
-
-
   const params = useLocalSearchParams();
   const { taskCreated, pursuitCreated, timerTaskI, route } = params;
   const i = timerTaskI ? parseInt(timerTaskI) : null;
   const task = (i != null && i >= 0 && i < Task.TASKS.length) ? Task.TASKS[i] : null;
 
+  // console.log(timed);
+
   useEffect(() => {
     if (route != 'timer') return;
 
     if(task){
-      taskChange(t);
+      taskChange(t, color, timed, notify, notifyID, setters);
     } else if(taskCreated){
       const t = Task.TASKS[Task.TASKS.length - 1];
-      taskChange(t);
+      taskChange(t, color, timed, notify, notifyID, setters);
     } else if(pursuitCreated){
       const p = Pursuit.PURSUITS[Pursuit.PURSUITS.length -1];
-      pChange(p);
+      pChange(p, color, timed, notify, notifyID, setters);
     }
     router.setParams({taskCreated: '', pursuitCreated: '', refresh: '', timerTaskI: ''});
 
   }, [taskCreated, pursuitCreated, task]);
 
   const adjustedTimeOut = () => {
-    if (!time.playing) return;
+    if (!timed.playing) return;
 
-    const ms = (time.elapsed && time.elapsed >= 0.95) ? 1000 : 20;
-    const elapsedMS = Date.now() - time.startTime;
+    const ms = (timed.elapsed && timed.elapsed >= 0.85) ? 1000 : 99;
+    const elapsedMS = Date.now() - timed.startTime;
     const adjustedMS =  ms - (elapsedMS % ms);
     playRef.current = setTimeout(() => {
-      setTime({...time, elapsed: (Date.now() - time.startTime) / 1000});
+      setTimed({...timed, elapsed: (Date.now() - timed.startTime) / 1000});
       adjustedTimeOut();
     }, adjustedMS);
   }
 
   useEffect(()=>{
-    if (time.playing && playRef.current == null) adjustedTimeOut();
-    else if (!time.playing && playRef.current != null){
+    if (timed.playing && playRef.current == null) adjustedTimeOut();
+    else if (!timed.playing && playRef.current != null){
       clearTimeout(playRef.current);
       playRef.current = null;
     } 
-  }, [time.playing]);
+  }, [timed.playing]);
 
   useEffect(() => {
     // based on: https://reactnative.dev/docs/appstate
     const listener = AppState.addEventListener("change", nextState => {
       if(backgroundState.current.match(/inactive|background/) && nextState === 'active')
-        restoreState(setDropState, setTarget, setTime);
+        restoreState(setters);
       
       backgroundState.current = nextState;
     }); 
@@ -138,45 +127,49 @@ export default function Tab(){
   }, []);
 
   const setPlayState = (shouldPlay)=>{
-    if(!shouldPlay && playRef.current != null){
-      clearTimeout(playRef.current);
-    }
-    const t = {
-      startTime: shouldPlay ? Date.now() - time.elapsed * 1000 : 0,
-      elapsed: time.elapsed, playing: shouldPlay
-    }
-    setTime(t);
+    console.log("SHOUD PLAY", shouldPlay);
     if (shouldPlay){
-      cacheState(dropState, target, t);
-      setTimer(t, target, setNotify);
+      const t = {
+        startTime: Date.now() - timed.elapsed * 1000,
+        elapsed: timed.elapsed, 
+        playing: true
+      }
+      
+      if (notify)
+        scheduleNotification(dropState, target, t, notify, notifyID, setters);
+      else
+        cacheState(dropState, target, t, false, false, setters);
     } 
-    else{
-      cancelTimer(notify);
-      wipeCache();
+    else {
+      if (playRef.current != null) clearTimeout(playRef.current);
+
+      cancelNotification(notifyID, setNotifyID);
+      const resetT = {...initTimed, elapsed: timed.elapsed};
+      cacheState(dropState, target, resetT, notify, false, setters);
     } 
   }
 
   const stop = (clearAll)=>{
-    cancelTimer();
-    if (playRef.current) clearTimeout(playRef.current);
-    
+    if (playRef.current != null) clearTimeout(playRef.current);
+
+    cancelNotification(notifyID, setNotifyID);
+    cacheState(dropState, target, initTimed, notify, false, setters);
+
     if (clearAll){
       color.resetTimeC();
       setDropState({p: null, t: null, i: null});
+      wipeCache();
     } 
-    
-    setTime({playing: false, elapsed: 0, startTime: 0});
-    wipeCache();
   }
 
   const [complete, required] = dropState?.t 
                               ? dropState.t.getUsage(TimeDate.DAY) 
                               : [0,0];
   const c = color.timeC;
-  const elapsed = Math.round(time.elapsed);
+  const elapsed = Math.round(timed.elapsed);
   const percent = Math.min(100,Math.round(elapsed / (target * 60) * 100));
   let timeStr;
-  const ms = (time.elapsed && time.elapsed < 1) ? Math.trunc(time.elapsed * 100) : null;
+  const ms = (timed.elapsed && timed.elapsed < 1) ? Math.trunc(timed.elapsed * 100) : null;
   const msStr = (ms < 10) ? '0' + String(ms) : String(ms); 
   const seconds = elapsed % 60;
   const minutes = (elapsed - seconds) / 60;
@@ -197,7 +190,8 @@ export default function Tab(){
           onSelect={(p)=>{
             // just refresh if no change to reset after backgrounded
             if (dropState.p == p) setDropState({...dropState});
-            else if (p) pChange(p);
+            else if (p) 
+              pChange(p, color, timed, notify, notifyID, setters);
           }} 
           // setTimeout because SelectDropdown uses conflicting nav that must finish
           addItemButtonCallBack={()=>setTimeout(
@@ -217,7 +211,8 @@ export default function Tab(){
           onSelect={(t, i) => {
             // just refresh if same task chosen (for coming back from background)
             if (t == dropState.t) setDropState({...dropState});
-            else if (t) taskChange(t);
+            else if (t) 
+              taskChange(t, color, timed, notify, notifyID, setters);
           }} 
           // setTimeout because SelectDropdown uses conflicting navigation
           addItemButtonCallBack={()=>{setTimeout(
@@ -242,8 +237,10 @@ export default function Tab(){
                 style={s.target}
                 min={1}
                 onChange={(v)=>{
-                  setTarget(v);
-                  cacheState(dropState, v, time)
+                  if (timed.playing)
+                    scheduleNotification(dropState, v, timed, notify, notifyID, setters);
+                  else
+                    cacheState(dropState, v, timed, notify, notifyID, setters);
                 }}
               />
             </View>
@@ -255,20 +252,20 @@ export default function Tab(){
               <SimpleSwitch 
                 color={c.dark}
                 isOn={notify} 
-                onChange={async (isOn, revert)=>{
-                  if (isOn){
-                    if (await Notify.switch(timerAskMessage, ()=>{
-                      revert();
-                      setNotify(false);
-                    })){
-                      setNotify(true);
-                      if (time.playing) setTimer(time, setNotify);
-                    }
-                    else revert();
+                onChange={async wasOn => {
+                  if(wasOn){
+                    cancelNotification(notifyID, setNotifyID);
+                    cacheState(dropState, target, timed, false, false, setters);
                   } else {
-                    cancelTimer(notify);
-                    setNotify(false);
-                  }
+                    if (await Notify.switch(timerAskMessage, ()=>setNotify(false))){
+                      if (timed.playing) 
+                        scheduleNotification(dropState, target, timed, true, notifyID, setters);
+                      else
+                        cacheState(dropState, target, timed, true, false, setters);
+                    } else {
+                      cacheState(dropState, target, timed, false, false, setters);
+                    }
+                  } 
                 }}/>
             </View>
           </View>
@@ -298,18 +295,17 @@ export default function Tab(){
         </View>
 
         <View style={[s.controls, {maxHeight: short ? 105 : 150}]}>
-          { (elapsed && !time.playing)
+          { (elapsed && !timed.playing)
             ? <StopButton 
                 style={[s.media,  {padding: short ? 5 : 0}]}
                 color={c.dark}
-                onPress={()=>stop()}
+                onPress={()=>stop(false)}
               />
             : <PauseButton 
                 style={[s.media, {padding: short ? 5 : 0}]} 
                 color={c.dark}
                 onPress={()=>{
-                  if (!playRef.current) return;
-                  setPlayState(false);
+                  if (timed.playing) setPlayState(false);
                 }}
               />
           }
@@ -326,11 +322,10 @@ export default function Tab(){
           </View>
           <PlayButton 
             style={[s.media, {padding: short ? 5 : 0}]} 
-            color={time.playing ? c.light : c.dark}
-            disabled={time.playing}
+            color={timed.playing ? c.light : c.dark}
+            disabled={timed.playing}
             onPress={()=>{
-              if (playRef.current != null) return;
-              setPlayState(true);
+              if (!timed.playing) setPlayState(true);
             }}
           />
         </View>
@@ -362,22 +357,12 @@ export default function Tab(){
         <TouchableOpacity 
           style={[s.button, {backgroundColor: color.grey.dark, opacity: 0.6}]}
           onPress={()=>{
-            if(time.elapsed){
+            if(timed.elapsed){
               Alert.alert('Discard Time Warning', 
               'The add button has not been pressed and the elapsed time will not be added.', 
               [
-                {
-                  text: 'Cancel',
-                  style: 'cancel',
-                },
-                {
-                  text: 'Discard', 
-                  style: 'destructive',
-                  onPress: () => {
-                    if (playRef.current) clearTimeout(playRef.current);
-                    stop(true);
-                  }
-                },
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Discard', style: 'destructive', onPress: () => stop(true) },
               ]); 
             } else stop(true);
           }}
@@ -394,7 +379,7 @@ export default function Tab(){
                   'Choose or create a task from the drop-down menu to add time.', 
                   [{text: 'OK'}])
                 else {
-                  stop();
+                  stop(false);
                   const t = dropState?.t.registerTime(target, TimeDate.DAY);
                   setRewards(rewards.concat(t));
                 } 
@@ -406,8 +391,8 @@ export default function Tab(){
             </TouchableOpacity>
         }
         <TouchableOpacity 
-          disabled={time.elapsed < 1}
-          style={[s.button, {backgroundColor: time.elapsed > 0 ? c.dark : '#99999944'}]}
+          disabled={timed.elapsed < 1}
+          style={[s.button, {backgroundColor: timed.elapsed > 0 ? c.dark : '#99999944'}]}
           onPress={()=>{
             if (dropState?.t==null){
               return Alert.alert(
@@ -416,16 +401,16 @@ export default function Tab(){
                 [{text: 'OK'}]) 
               } 
             else {
-              stop();
+              stop(false);
               setRewards(
-                rewards.concat(dropState?.t.registerTime(Math.round(time.elapsed / 60), 
+                rewards.concat(dropState?.t.registerTime(Math.round(timed.elapsed / 60), 
                 TimeDate.DAY))
               );
             } 
           }}
         >
-          <Text style={[s.buttTxt, {opacity: time.elapsed > 0 ? 1 : 0.5}]}>
-            {time.elapsed >= 1 ? 'ADD ' + timeStr : 'ADD 00:00'}
+          <Text style={[s.buttTxt, {opacity: timed.elapsed > 0 ? 1 : 0.5}]}>
+            {timed.elapsed >= 1 ? 'ADD ' + timeStr : 'ADD 00:00'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -433,54 +418,81 @@ export default function Tab(){
   );
 }
 
-const cacheState = (dropState, target, time) => {
-  if (!time.playing) return;
+const taskChange = (t, color, timed, notify, notifyID, setters) => {
+  color.setTimeColByI(t.pursuit.colorScheme);
+  const d = {p: t.pursuit, t: t, i: t.pursuit.tasks.indexOf(t)};
+  // console.log("TASK CHANGE:", d.p.name, d.t.name, d.i, t.pursuit.tasks.indexOf(t));
+  cacheState(d, t.defaultDur, timed, notify, notifyID, setters);
+}
+
+
+const pChange = (p, color, timed, notify, notifyID, setters) => {
+  color.setTimeColByI(p.colorScheme);
+  const d = {p: p, t: null, i: null};
+  cacheState(d, 20, timed, notify, notifyID, setters);
+}
+
+
+const cacheState = (dropState, target, timed, notify, notifyID, setters) => {
+  setters.setDropState(dropState);
+  setters.setTarget(target);
+  setters.setTimed(timed);
+  setters.setNotify(notify);
+  setters.setNotifyID(notifyID);
 
   const sObj = {
+    notify: notify ? 1 : 0,
+    notifyID: notifyID ? notifyID : 0,
     target: target,
-    startTime: time.startTime,
+    startTime: timed.startTime,
     taskIndex: dropState?.t != null ? dropState.t.taskOrder : -1,
     i: dropState?.i != null ? dropState.i : -1,
     pursuitIndex: dropState?.p != null ? dropState.p.key : -1,
   }
+  console.log('CACHE:', sObj);
   M.STORAGE.set('alarm', JSON.stringify(sObj));
 }
 
 const wipeCache = () => M.STORAGE.delete('alarm');
 
 
-const restoreState = (setDropState, setTarget, setTime) => {
+const restoreState = (setters) => {
   if (!M.STORAGE.contains('alarm')) return; 
-
-  console.log("RESTORING STATE");
   
   const sObj = JSON.parse(M.STORAGE.getString('alarm'));
-  console.log("SOBJ:", sObj);
-  const msSoFar = Date.now() - sObj.startTime;
+  console.log("RESTORE:", sObj);
+  // if startTime is zero playState is paused so no time has elapsed
+  const msSoFar = sObj.startTime ? Date.now() - sObj.startTime : 0;
   // if over 99h99m99s then abandon
   if (msSoFar > 359999000 || msSoFar < 0){
     wipeCache();
-    setDropState({p: null, t: null, i: null});
-    setTarget(20);
-    setTime({startTime: 0, elapsed: 0, playing: false})
+    setters.setDropState({p: null, t: null, i: null});
+    setters.setTarget(20);
+    setters.setTimed(initTimed);
     return;
   }
 
-  setTarget(sObj.target);
-  const t = {startTime: sObj.startTime, playing: true, elapsed: msSoFar / 1000};
-  setTime(t);
+  setters.setNotify(sObj.notify == 1 ? true : false);
+  setters.setNotifyID(sObj.notifyID ? sObj.notifyID : false);
+  setters.setTarget(sObj.target);
+  // msSoFar is zero when not playing so convert to boolean for playing state
+  const t = {startTime: sObj.startTime, playing: !!msSoFar, elapsed: msSoFar / 1000};
+  setters.setTimed(t);
   const d = {
     t: sObj.taskIndex >= 0 ? Task.TASKS[sObj.taskIndex] : null,
     p: sObj.pursuitIndex >= 0 ? Pursuit.PURSUITS[sObj.pursuitIndex] : null,
     i: sObj.i >=0 ? sObj.i : null,
   }
-  setDropState(d);
+  setters.setDropState(d);
 }
 
 const timerAskMessage = `Enabling notifications is required in order to be notified when the timer reaches the target time.`
 
-const setTimer = async (time, target, setNotify) => {
-  const s = target * 60 - (Date.now() - time.startTime) / 1000;
+const scheduleNotification = async (dropState, target, timed, notify, notifyID, setters) => {
+  if (notifyID) cancelNotification(notifyID, null)
+  const s = target * 60 - (Date.now() - timed.startTime) / 1000;
+  // ignore notifications in the past
+  if (s < 0) return console.log("Notification deadline is in the past");
 
   const id = await Notify.send({
     content: {
@@ -492,14 +504,16 @@ const setTimer = async (time, target, setNotify) => {
       seconds: s
     }
   });
-  console.log("TIMER NOT> SECONDS:", s, id);
-  setNotify(id);
+  console.log("SCHEDULE NOTIFY", timed, notify, id);
 
-}
-const cancelTimer = (notify) => {
-  if (notify) Notify.cancel(notify);
+  cacheState(dropState, target, timed, notify, id, setters);
 }
 
+
+const cancelNotification = (notifyID, setNotifyID) => {
+  Notify.cancel(notifyID);
+  if (setNotifyID) setNotifyID(false);
+}
 
 const s = StyleSheet.create({
   container: {

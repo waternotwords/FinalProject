@@ -118,9 +118,13 @@ export default function AddPursuit() {
         <Text style={[s.label]}>Reminder Notifications for All Tasks</Text>
         <View style={s.horizontal}>
             <View style={s.switchContain}>
-              <SimpleSwitch 
+              <SimpleSwitch
                 isOn={pData.reminders} 
-                onChange={isOn=>setPData({...pData, reminders: isOn})}/>
+                onChange={ async wasOn => {
+                  if (wasOn) setPData({...pData, reminders: false});
+                  else setPData({...pData, reminders: true});
+                }}
+              />
             </View>
             <View style={s.miniButtContain}>
               { !editMode
@@ -151,7 +155,11 @@ export default function AddPursuit() {
             <View style={s.switchContain}>
               <SimpleSwitch
                 isOn={pData.sounds} 
-                onChange={isOn=>setPData({...pData, sounds: isOn})}/>
+                onChange={ async wasOn => {
+                  if (wasOn) setPData({...pData, sounds: false});
+                  else setPData({...pData, sounds: true});
+                }}
+              />
             </View>
             <View style={s.miniButtContain}>
               { !editMode
