@@ -119,10 +119,12 @@ export class TimeDate {
   static stripTime(d){ return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
   
   static stripTimeToVal(d){ return this.stripTime(d).valueOf(); }
-  
-  static appDateValue(d){ return TimeDate.stripTimeToVal(d); }
  
-  static todayDateVal(){ return TimeDate.appDateValue(TimeDate.now()); }
+  static todayDateVal(){ return TimeDate.stripTimeToVal(TimeDate.now()); }
+
+  static tomorrowVal() { return this.todayDateVal() + TimeDate._msPerDay }
+
+  static yesterdayVal() { return this.todayDateVal() - TimeDate._msPerDay }
 
   static calcDaysFromVal(dv){
     const dv2 = TimeDate.todayDateVal();
@@ -159,5 +161,3 @@ export class TimeDate {
 
   static msPerDay(){ return TimeDate._msPerDay; }
 }
-
-

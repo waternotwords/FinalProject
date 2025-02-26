@@ -37,6 +37,7 @@ Notifications.setNotificationHandler({
 
 export default function Tab(){
   const model = useContext(MODEL);
+  const rollInProgress = model.rollInProgress();
   // if not redirect from past day in task list change to today better to do in taskCell not here
   // useFocusEffect(()=>model.navigationTookPlaceTo('timer', true));
 
@@ -46,7 +47,6 @@ export default function Tab(){
   const playRef = useRef(null);
   const [rewards, setRewards] = useState([]);
   const [award, setAward] = useState(null);
-
 
   useEffect(()=>{
     if (rewards.length == 0) return;
@@ -76,8 +76,6 @@ export default function Tab(){
   const { taskCreated, pursuitCreated, timerTaskI, route } = params;
   const i = timerTaskI ? parseInt(timerTaskI) : null;
   const task = (i != null && i >= 0 && i < Task.TASKS.length) ? Task.TASKS[i] : null;
-
-  // console.log(timed);
 
   useEffect(() => {
     if (route != 'timer') return;
@@ -116,14 +114,13 @@ export default function Tab(){
   }, [timed.playing]);
 
   useEffect(() => {
-    // based on: https://reactnative.dev/docs/appstate
     const listener = AppState.addEventListener("change", nextState => {
       if(backgroundState.current.match(/inactive|background/) && nextState === 'active')
         restoreState(setters);
       
       backgroundState.current = nextState;
     }); 
-    return () => listener.remove();
+    return ()=>listener.remove();
   }, []);
 
   const setPlayState = (shouldPlay)=>{

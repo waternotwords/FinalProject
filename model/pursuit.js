@@ -9,12 +9,68 @@ export class Pursuit {
     // When app loads get the categoryIDs and the highest ID from storage
   static CIDs = [];
   static PURSUITS = [];
+  static LAST_FULL_ROLL = null;
   static ACTIVE = null;
   static ID_COUNTER = null;
   // this.rM's TODAY's index
   static RTI = 1;
+
+  static getFullRollDate(){
+    // if first run or app restart
+    if(Pursuit.LAST_FULL_ROLL == null){
+      // if not first run
+      if(M.STORAGE.contains('lastFullRoll')){
+        Pursuit.LAST_FULL_ROLL = M.STORAGE.getNumber('lastFullRoll');
+      } else {
+        Pursuit.LAST_FULL_ROLL = TimeDate.todayDateVal();
+        M.STORAGE.set('lastFullRoll', Pursuit.LAST_FULL_ROLL); 
+      }
+    }
+    return Pursuit.LAST_FULL_ROLL;
+  }
+
+  static updateFullRollDate(){
+    Pursuit.LAST_FULL_ROLL = TimeDate.todayDateVal();
+    M.STORAGE.set('lastFullRoll', Pursuit.LAST_FULL_ROLL);
+  }
+
+  static fullRoll(){
+    console.log("Pursuit.STATIC.fullRoll");
+    for(const p of Pursuit.PURSUITS){
+      p.checkRollOver();
+    }
+    Pursuit.updateFullRollDate();
+  }
+
+  static checkFullRoll(){
+    if (TimeDate.isMoreThanDay(Pursuit.getFullRollDate())) Pursuit.fullRoll();
+  }
+
+  static async checkFullRollAsync(onFinish){
+    console.log("Pursuit.STATIC.checkFullRollAsync", Pursuit.getFullRollDate(), TimeDate.nowVal(), TimeDate.isMoreThanDay(Pursuit.getFullRollDate()));
+    if (TimeDate.isMoreThanDay(Pursuit.getFullRollDate())){
+      Pursuit.fullRoll();
+      onFinish?.(true);
+    
+    } else onFinish?.(false);
+  }
+
+  // static checkFullRoll(runAsync=false, onAsyncRollFinish=null){
+  //   console.log("Pursuit.checkFullRoll()", Pursuit.getFullRollDate(), 
+  //               TimeDate.nowVal(), TimeDate.nowVal() - Pursuit.getFullRollDate());
+  //   if (TimeDate.isMoreThanDay(Pursuit.getFullRollDate())){
+  //     console.log("Pursuit.checkFullRoll() : rolling");
+  //     if (runAsync) Pursuit.asyncFullRoll(onAsyncRollFinish);
+  //     else Pursuit.fullRoll();
+      
+  //     return true;
+  //   }
+  //   return false;
+  // }
+
+
   
-  static GET_NEXT_ID(){
+  static getNextID(){
     const d = TimeDate.nowVal();
     if(Pursuit.ID_COUNTER == null){
       // first run (pursuit / task creation)
@@ -46,13 +102,6 @@ export class Pursuit {
     }
     console.log("PURSUITS:", Pursuit.PURSUITS.map(e=>e.name));
     return Pursuit.PURSUITS;
-  }
-
-  static rollAll(){
-    console.log("Pursuit.ROLL ALL")
-    for(const p of Pursuit.PURSUITS){
-      p.checkRollOver();
-    }
   }
 
   constructor(){
@@ -90,7 +139,6 @@ export class Pursuit {
 
     return sum;
   }
-
   set taskIDs(v){
     this._taskIDs = v;
     M.STORAGE.set(this._CID + '.taskIDs', JSON.stringify(v));
@@ -171,7 +219,7 @@ export class Pursuit {
   // make new category and save in STORAGE
   static MakeNew(name, startOfWeek, colorScheme, notifications, sounds, initialHours){
     const c = new Pursuit();
-    c._CID = 'c' + Pursuit.GET_NEXT_ID();
+    c._CID = 'c' + Pursuit.getNextID();
     c._taskIDs = [];
 
     Pursuit.CIDs.push(c._CID);
@@ -199,21 +247,26 @@ export class Pursuit {
     return c;
   }
 
-  // add time to completed minutes for required tasks
-  registerTime(duration, dayAdjust){
+  // add time to completed minutes for total time & required tasks
+  registerTime(total, required, dayAdjust){
+    console.log("pursuit.registerTime:", total, required, dayAdjust);
     const i = Pursuit.RTI + TimeDate.dayAdjustToPeriodAdjust(dayAdjust, this._dayOfWeek);
-    this._cM[i] += duration;
+    this._cM[i] += required;
     // use setter to store;
     this.cM = this._cM;
     // cache the old value
     const oldM = this.totalM;
     // always add to the latest total since cumulative
-    this._tM[this._tM.length - 1] += duration;
+    this._tM[this._tM.length - 1] += total;
     // if past period, also add to past period
-    if (i < 0) this._tM[this._tM.length -2] += duration;
+    if (i < 0) this._tM[this._tM.length -2] += total;
     this.tM = this._tM;
+
+    // TODO pursuit completed required minutes award
     return pursuitAward(oldM, this.totalM);
   }
+
+
 
   // adjust the REQUIRED minutes (not the minutes completed)
   adjustReqMin(thisPeriod, nextPeriod=false){

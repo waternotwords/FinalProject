@@ -9,6 +9,7 @@ import { COLOR } from '../../model/ui.js';
 
 export default function Tab(){
   const model = useContext(MODEL);
+  const rollInProgress = model.rollInProgress();
   // useFocusEffect(()=>model.navigationTookPlaceTo('categories', true)); 
   const c = useContext(COLOR);
   const listRef = useRef();

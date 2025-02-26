@@ -1,3 +1,4 @@
+import { useState, useEffect, useCallback } from 'react';
 import { Stack } from 'expo-router/stack';
 import { View } from 'react-native';
 import { ModelContext } from '../model/globalContext.js';
@@ -7,7 +8,6 @@ import { StatusBar } from 'expo-status-bar';
 import { SplashScreen } from 'expo-router';
 import { Pursuit } from '../model/pursuit';
 import { Task } from '../model/task';
-import { useState, useEffect, useCallback } from 'react';
 import * as Notifications from 'expo-notifications';
 import { Notify } from '../model/notifications.js'
 

@@ -96,7 +96,7 @@ export const LinearChooser = (p) => {
   });
 
   return(
-    <View style={[p.style, style.container]}>
+    <View style={[style.container, p.style]}>
       {cells}
     </View>
   )
@@ -109,11 +109,14 @@ const style = StyleSheet.create({
   },
   cell: {
     flex: 1,
-    alignItems: 'center',
+    height: '100%',
+
+    alignItems: 'center', 
     justifyContent: 'center',
-    overflow: 'hidden',
   },
   text: {
-    fontSize: 16
+    fontSize: 16,
+    lineHeight: 16,
+    textAlign: 'center',    
   }
 });

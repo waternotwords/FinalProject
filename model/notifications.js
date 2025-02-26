@@ -69,6 +69,14 @@ export class Notify {
     Notifications.cancelAllScheduledNotificationsAsync();
   }
 
+  static async printAll(){
+    console.log("###### PRINT ALL #####");
+    const notifications = await Notifications. getAllScheduledNotificationsAsync () ;    
+    for (let n of notifications) {
+      console.log(n.trigger);
+    }
+  }
+
   static askPermission = (askMess, callBack) => {
     const ask = askMess 
       ? askMess

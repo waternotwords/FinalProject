@@ -19,8 +19,9 @@ export class Task {
         const t = Task.CreateFromID(id, p);
         p.tasks.push(t);
       }
-      p.checkRollOver();
     }
+    // check if roll-over is required for any of data model
+    Pursuit.checkFullRoll();
     Task.TASKS.sort((a,b)=>a.taskOrder-b.taskOrder);
     // Task.TASKS.forEach(e=>e.print());
   }
@@ -37,7 +38,7 @@ export class Task {
   static MakeNew(pursuit, name, calcType, minDur, defaultDur, daysMap, reminderTime, reminders, thisWeekReq = null, existingID = null){
     const t = Task.taskTypeChooser(calcType);
     t._pursuit = pursuit;
-    t._TID = existingID ? existingID : Pursuit.GET_NEXT_ID();
+    t._TID = existingID ? existingID : Pursuit.getNextID();
     t.name = name;
     t.defaultDur = defaultDur;
     t.totalM = 0; 
@@ -68,18 +69,20 @@ export class Task {
   }
 
   static DaysMapChanged(a1,a2){
-    for(const i = 0; i < a1.length; i++){
-      if (a1[i] != a2[i]) return false;
-      return true
+    if (a1.length != a2.length) return false;
+    for(let i = 0; i < a1.length; i++){
+      if (a1[i] != a2[i]) return true;
     }
+    return false;
   }
 
   static Edit(task, name, pursuit, daysMap, defaultDur, reminderTime, reminders, minDur, calcType){    
+    console.log("EDIT CALLED");
     task.pursuit = pursuit;
     // TODO
     // change task type
 
-    
+
     // if (task.calcType != calcType){
     //   const time = task.totalM;
     //   const tIndex = Task.TASKS.indexOf(task);
@@ -107,6 +110,7 @@ export class Task {
     task._reminderTime = reminderTime;
     task.reminders = reminders;
     if (task.reminders) task.setNotify();
+
     console.log("EDIT: reminders, reminderTime");
     console.log(String(reminderTime), String(task.reminderTime));
       
@@ -224,6 +228,8 @@ export class Task {
       const [complete, required] = this.getUsage(0);
       //.(Math.max(complete - required));
       // TODO: remove completed minutes AND remove completed from required for this period
+
+      // TODO: DEAL WITH CHANGE OF PURSUIT MINUTES
       v.addTask(this, this._TID);
     }
     this._pursuit = v;    
@@ -332,6 +338,7 @@ export class Task {
     const [thisP, nextP] = this.calcIncompleteMinFromNow();
     this.pursuit.adjustReqMin(-1 * thisP, -1 * nextP);
   }
+
   calcReqMinFromNow(){
     return [0,0];
   }
@@ -411,16 +418,16 @@ export class Task {
         },
         trigger: {
           weekday: i+1,
-          hours: d.getHours(),
+          hour: d.getHours(),
           minute: d.getMinutes(),
           repeats: true
         }
       }
-      console.log("setNotify CAlled", mObj.trigger);
+      console.log("setNotify Called", mObj.trigger);
 
       const id = await Notify.send(mObj);
       ids.push(id);
-      await (()=>new Promise(empty=>setTimeout(empty, 500)))();
+      // await (()=>new Promise(empty=>setTimeout(empty, 500)))();
     }
     this.notifyIDs = ids;
   }
@@ -458,7 +465,6 @@ export class AnytimeTask extends Task {
   }
 
   registerTime(duration, dayAdjust){
-    // TODO
     const restarted = false // check if there has been a lack of activity for a few days
     const oldP = this.pursuit.totalM;
     const oldT = this._totalM;
@@ -470,9 +476,12 @@ export class AnytimeTask extends Task {
     // update total minutes for task using setter
     this.totalM += duration;
     // update total minutes for pursuit using setter
-    this.pursuit.totalM += duration;
+    this.pursuit.registerTime(duration, 0, dayAdjust);
 
     return []//getAwardData(this._calcType, oldT, this.totalM, oldP, this.pursuit.totalM, 0, 0, restarted);
+  }
+  calcIncompleteMinFromNow(){
+    return [0,0];
   }
 
   newPeriodRequiredMinutes(){
@@ -519,10 +528,9 @@ export class OnceTask extends Task {
   }
 
   registerTime(duration, dayAdjust){
-    // TODO
-    const restarted = false // check if there has been a lack of activity for a few days
-    const oldP = this.pursuit.totalM;
-    const oldT = this._totalM;
+    // const restarted = false // check if there has been a lack of activity for a few days
+    // const oldP = this.pursuit.totalM;
+    // const oldT = this._totalM;
 
     const cI = Task.CTI + dayAdjust;
 
@@ -531,9 +539,13 @@ export class OnceTask extends Task {
     // update total minutes for task using setter
     this.totalM += duration;
     // update total minutes for pursuit using setter
-    this.pursuit.totalM += duration;
+    const awards = this.pursuit.registerTime(duration, 0, dayAdjust);
 
-    return []//getAwardData(this._calcType, oldT, this.totalM, oldP, this.pursuit.totalM, 0, 0, restarted);
+    return awards//getAwardData(this._calcType, oldT, this.totalM, oldP, this.pursuit.totalM, 0, 0, restarted);
+  }
+
+  calcIncompleteMinFromNow(){
+    return [0,0];
   }
 
   checkRollOver(){
@@ -746,8 +758,8 @@ export class DailyTask extends Task {
 
     // update pursuit required minutes if necessary
     const stillReqM = required - this._cM[cI];
-    if (stillReqM > 0 && !this.paused)
-        awards.concat(this.pursuit.registerTime(Math.min(stillReqM, duration), dayAdjust));
+    const reqMin = stillReqM < 0 || this.paused ? 0 : stillReqM;
+    awards.concat(this.pursuit.registerTime(duration, Math.min(reqMin, duration), dayAdjust));
 
     // use setter to update the minutes complete
     this._cM[cI] += duration;
@@ -897,7 +909,6 @@ export class WeeklyTask extends Task {
 
 
   registerTime(duration, dayAdjust){
-    // TODO
     const restarted = false // check if there has been a lack of activity for a few days
     const oldP = this.pursuit.totalM;
     const oldT = this._totalM;
@@ -913,8 +924,8 @@ export class WeeklyTask extends Task {
 
     // UPDATE PURSUIT required minutes if necessary
     const stillReqM = required - this._pcM[pI];
-    if(stillReqM > 0 && !this.paused)
-        this.pursuit.registerTime(Math.min(stillReqM, duration), dayAdjust);
+    const reqMin = stillReqM < 0 || this.paused ? 0 : stillReqM;
+    this.pursuit.registerTime(duration, Math.min(reqMin, duration), dayAdjust);
 
     // use setter to update the minutes complete in the period
     this._pcM[pI] += duration;

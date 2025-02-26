@@ -1,7 +1,7 @@
 
 import { useContext, useState } from 'react';
 import { Tabs, router } from 'expo-router';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, InteractionManager } from 'react-native';
 import { MODEL } from '../../model/globalContext.js';
 import { COLOR } from '../../model/ui.js';
 import { TimeDate } from '../../model/time.js';
@@ -13,18 +13,15 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-
-
 export default function TabLayout() {
   const model = useContext(MODEL);
+  model.checkRoll();
   const c = useContext(COLOR);
   const [update, setUpdate] = useState(0);
   const refresh = ()=>{
     model.refresh();
     setUpdate(update + 1);
   }
-  const grey = c.grey;
-  console.log((TimeDate.now().getMonth() + 1) + '/' + TimeDate.now().getDate())
 
   const IndexPrevButton = () => (
     <TouchableOpacity style={s.leftButt} onPress={()=>{
@@ -56,7 +53,7 @@ export default function TabLayout() {
 
   const NextDayButton = (p) => (
     <TouchableOpacity style={s.leftButt} onPress={()=>{
-      TimeDate.nextDay()
+      TimeDate.nextDay();
       refresh();
     }}>
       <Text style={[s.txt]}>
@@ -98,12 +95,11 @@ export default function TabLayout() {
   const TimeTravelForward = (p) => (
     <TouchableOpacity style={s.leftButt} onPress={()=>{
       TimeDate.nextTestDay();
-      model.rollAll();
-      model.refresh();
+      refresh();
     }}>
       <Text style={[s.txt]}>
         {(()=>{
-          const d = TimeDate.now();
+          const d = new Date(TimeDate.tomorrowVal());
           const m = TimeDate.months[d.getMonth()];
           const dom = d.getDate();
           return m + ' ' + dom;
@@ -132,21 +128,21 @@ export default function TabLayout() {
 
   const WipeAll = () => (
     <TouchableOpacity style={s.leftButt} onPress={()=>{
-      model.wipeAll();
       TimeDate.futureDays = 0;
-      model.refresh();
       Notify.cancelAll();
+      model.wipeAll();
     }}>
       <Text style={[s.txt]}> ! Wipe Model !</Text>
     </TouchableOpacity>
   );
 
   return (
+  <View style={s.container}>
     <Tabs
       initialParams={{route:'tabs2'}}
       screenOptions={{ 
-        tabBarInactiveTintColor: grey.light,
-        tabBarStyle:{paddingBottom: 0, backgroundColor: grey.dark},
+        tabBarInactiveTintColor: c.grey.light,
+        tabBarStyle:{paddingBottom: 0, backgroundColor: c.grey.dark},
         tabBarItemStyle: {justifyContent:'flex-end'},
       }}
     >
@@ -212,11 +208,16 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+  </View>
   );
 }
 
 
 const s = StyleSheet.create({
+  container: {
+    height: '100%',
+    width: '100%'
+  },
   leftButt: {
     flexDirection: 'row',
     alignItems: 'center', 

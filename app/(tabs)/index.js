@@ -9,6 +9,7 @@ import { MODEL } from "../../model/globalContext.js";
 
 export default function Tab() {
   const model = useContext(MODEL);
+  const rollInProgress = model.rollInProgress();
   // useFocusEffect(()=>model.navigationTookPlaceTo('index', true));
   const params = useLocalSearchParams();
 

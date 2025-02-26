@@ -43,6 +43,14 @@ export default function AddTask(){
     pursuitsLen.current = Pursuit.PURSUITS.length;
   }
 
+  notifySwitchPermissions = async () => {
+    if(await Notify.switch(false, ()=>setTData({...tData, reminders: false}))){
+      setTData({...tData, reminders: true});
+    } else {
+      setTData({...tData, reminders: false});
+    }    
+  }
+
   return (
     <Pressable style={[s.contain]} onPress={()=>Keyboard.dismiss()}>
       <View style={s.three}>
@@ -78,12 +86,12 @@ export default function AddTask(){
       </View>
 
       <View style={s.three}>
-        <Text style={[s.label]}>Minutes Calculation Period</Text>
+        <Text style={[s.label]}>Task Type & Minutes Calculation</Text>
         <LinearChooser
           elements={[
             {text:'Once', selected:tData.calcType == TimeDate.calcPeriod[0]},
             {text:'Daily', selected:tData.calcType == TimeDate.calcPeriod[1]},
-            {text:'7 Days', selected:tData.calcType == TimeDate.calcPeriod[2]},
+            {text:'Weekly', selected:tData.calcType == TimeDate.calcPeriod[2]},
             {text:'Anytime', selected:tData.calcType == TimeDate.calcPeriod[3]}
           ]}
           callback={(_, index)=>setTData({
@@ -99,7 +107,7 @@ export default function AddTask(){
       { tData.calcType != 1
         ? null
         : <View style={s.three}>
-            <Text style={[s.label]}>Days of the Week</Text>
+            <Text style={[s.label]}>Days of the Week Required</Text>
             <LinearChooser
               elements={TimeDate.daysOfWeek.map((e,i)=>({text:e, selected:tData.daysMap[i]}))}
               callback={(v, i, arr)=>setTData({...tData, daysMap: arr})}
@@ -110,7 +118,7 @@ export default function AddTask(){
 
       <View style={[s.three, s.horizontal, {gap: short ? 10 : 50}]}>
         <View style={[s.numContainer]}>
-          <Text style={[s.label]}>Default Usage Time</Text>
+          <Text style={[s.label]}>Default Session Time</Text>
           <NumericalChooser 
             initialValue={tData.defaultDur} 
             max={1200}
@@ -154,16 +162,18 @@ export default function AddTask(){
           <Text style={[s.label]}>Reminders</Text>
           <View style={s.switchContain}>
             <SimpleSwitch
-              isOn={tData.reminders} 
+              isOn={tData.reminders && (!tData?.pursuit || tData.pursuit.reminders) && Notify.STATUS.canSend} 
               onChange={ async wasOn => {
                 if(wasOn){
                   setTData({...tData, reminders: false});
                 } else {
-                  if(await Notify.switch(false, ()=>setTData({...tData, reminders: false}))){
-                    setTData({...tData, reminders: true});
-                  } else {
-                    setTData({...tData, reminders: false});
-                  }    
+                  if(tData?.pursuit && !tData.pursuit.reminders){
+                    pursuitRemindersOff(()=>{
+                      tData.pursuit.reminders = true;
+                      notifySwitchPermissions()
+                    });
+                  }
+                  else notifySwitchPermissions();
                 }
               }}
             />
@@ -183,18 +193,20 @@ export default function AddTask(){
           </View>
         </View>
         <View style={{flex: 1, alignItems: 'flex-end'}}>
-          <Text style={[s.label, {textAlign: 'right'}]}>Time of Day</Text>
+          <Text style={[s.label, {textAlign: 'right'}]}>Repeat (2h)</Text>
           <View style={s.switchContain}>
-            <LinearChooser 
-              elements={[{text:'AM'}, {text:'PM'}]}
-              callback={(v, i)=> setTData({
-                ...tData, reminderTime: TimeDate.setAMPM(tData?.reminderTime, i==0)
-              })}
+            <SimpleSwitch
+              onChange={(v, i)=> console.log("addEditTask : SimpleSwitch for Repeat : TODO:", v, i)}
+            />
+        
+            {/* <LinearChooser 
+              elements={[{text:'until done'}, {text:'once only'}]}
+              callback={(v, i)=> console.log("addEditTask : LinearChooser : TODO:", v, i)}
               style={s.two}
               radio={true}
               selectColor={!tData.reminders ? '#999' : null }
               manualSingleSelect={TimeDate.getAM(tData.reminderTime) ? 0 : 1}
-            />
+            /> */}
           </View>
         </View>
       </View>
@@ -284,17 +296,17 @@ const getNewState = (pursuit) => ({
 
 const existingTaskState = (task) => {
   return ({
-  name: task.name,
-  pursuit: task.pursuit,
-  calcType: task.calcType,
-  daysMap: [...task.daysMap],
-  minDur: task.minDur,
-  defaultDur: task.defaultDur,
-  reminders: task.reminders,
-  // paused is a date in the model
-  paused: task.paused != false,
-  reminderTime: task.reminderTime
-});
+    name: task.name,
+    pursuit: task.pursuit,
+    calcType: task.calcType,
+    daysMap: [...task.daysMap],
+    minDur: task.minDur,
+    defaultDur: task.defaultDur,
+    reminders: task.reminders,
+    // paused is a date in the model
+    paused: task.paused != false,
+    reminderTime: task.reminderTime
+  });
 };
 
 
@@ -345,7 +357,6 @@ const editTask = (task, tData, params) => {
 }
 
 
-
 const changesHaveBeenMade = (task, tData)=>{
   if (!task) return true;
 
@@ -353,7 +364,7 @@ const changesHaveBeenMade = (task, tData)=>{
     task.name == tData.name &&
     task.pursuit == tData.pursuit &&
     task.calcType == tData.calcType &&
-    Task.DaysMapChanged(task.daysMap, tData.daysMap) &&
+    !Task.DaysMapChanged(task.daysMap, tData.daysMap) &&
     task.defaultDur == tData.defaultDur &&
     task.reminderTime.valueOf() == tData.reminderTime.valueOf() &&
     task.reminders == tData.reminders &&
@@ -384,6 +395,11 @@ const deleteWarn = (name, onDelete) => Alert.alert(
   'Delete Task?', 'Warning! Deleting a task cannot be undone. Are you sure you want to delete the task: ' + name + '?', 
   [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: onDelete }]
 );
+const pursuitRemindersOff = (onTurnOn) => Alert.alert(
+  'Reminders are Off', 
+  'Reminders are turned off for this and all other tasks in this Pursuit.', 
+  [{ text: 'Cancel', style: 'cancel'}, { text: 'Turn On for All Tasks', style: 'destructive', onPress: onTurnOn }]
+);
 const pauseTask = (onOK) => Alert.alert(
   'Pause Task', 
   'Pausing a task removes all remaining required minutes for that task. Paused tasks do not show up in the Task List', 
@@ -401,6 +417,7 @@ const unPauseTask = (onOK, calcType) => {
     [{ text: 'Cancel', style: 'cancel' }, { text: 'Resume', onPress: onOK}]
   )
 } 
+
 
 
 const s = StyleSheet.create({
